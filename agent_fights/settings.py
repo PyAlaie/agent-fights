@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'rest_framework',
 
     # first-parties
+    'core',
     'authentication',
 ]
 
@@ -124,11 +125,17 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
+STATIC_ROOT = 'static/'
+MEDIA_ROOT = 'media/'
+
 STATIC_URL = 'static/'
+MEDIA_URL = 'media/'
 
 # setting for third-parties
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
-    ]
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 100
 }
