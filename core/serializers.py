@@ -5,7 +5,7 @@ class EnvSerializer(serializers.ModelSerializer):
     class Meta:
         model = Env
         fields = ['id', 'created_at', 'updated_at', 
-                  'name', 'min_agents', 'max_agents', 
+                  'name', 'code_file', 'min_agents', 'max_agents', 
                   'creator', 'agents', 'games']
         read_only_fields = ['id', 'created_at', 'updated_at', 'creator']
 
