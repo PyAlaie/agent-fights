@@ -56,3 +56,23 @@ class GameAgentsListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Agent
         fields = ['id', 'name', 'env', 'creator']
+
+class UserEnvsListSerializer(serializers.ModelSerializer):
+    
+    class Meta:
+        model = Env
+        fields = ['id', 'name', 'code_file', 
+                  'min_agents', 'max_agents']
+        
+class UserAgentsListSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Env
+        fields = ['id', 'name' , 'code_file']
+
+class UserGamesListSerializer(serializers.ModelSerializer):
+    winner = serializers.CharField(source='winner.username')
+
+    class Meta:
+        model = Game
+        fields = ['id', 'name', 'status', 'winner']

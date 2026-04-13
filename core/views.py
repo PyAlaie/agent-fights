@@ -7,7 +7,8 @@ from rest_framework.pagination import PageNumberPagination
 
 from .models import Env, Agent, Game
 from .serializers import EnvSerializer, EnvGamesListSerializer, \
-AgentSerializer, GameSerializer, GameAgentsListSerializer
+    AgentSerializer, GameSerializer, GameAgentsListSerializer, \
+    UserEnvsListSerializer, UserAgentsListSerializer, UserGamesListSerializer
 
 from .permissions import IsCreatorOrAdmin
 
@@ -253,4 +254,46 @@ class GameAgentsListView(APIView):
         paginated_queryset = paginator.paginate_queryset(game.agents, request, self)
 
         serializer = GameAgentsListSerializer(instance=paginated_queryset, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    
+class UserEnvsListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        # A list of object retreival
+        envs = request.user.envs.order_by('-updated_at')
+
+        # setup of pagination
+        paginator = PageNumberPagination()
+        paginated_queryset = paginator.paginate_queryset(envs, request, self)
+
+        serializer = UserEnvsListSerializer(instance=paginated_queryset, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    
+class UserAgentsListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        # A list of object retreival
+        agents = request.user.agents.order_by('-updated_at')
+
+        # setup of pagination
+        paginator = PageNumberPagination()
+        paginated_queryset = paginator.paginate_queryset(agents, request, self)
+
+        serializer = UserAgentsListSerializer(instance=paginated_queryset, many=True)
+        return paginator.get_paginated_response(serializer.data)
+    
+class UserGamesListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        # A list of object retreival
+        games = request.user.games.order_by('-updated_at')
+
+        # setup of pagination
+        paginator = PageNumberPagination()
+        paginated_queryset = paginator.paginate_queryset(games, request, self)
+
+        serializer = UserGamesListSerializer(instance=paginated_queryset, many=True)
         return paginator.get_paginated_response(serializer.data)
