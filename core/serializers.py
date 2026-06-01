@@ -71,8 +71,8 @@ class UserAgentsListSerializer(serializers.ModelSerializer):
         fields = ['id', 'name' , 'code_file']
 
 class UserGamesListSerializer(serializers.ModelSerializer):
-    winner = serializers.CharField(source='winner.username')
+    # winner = serializers.CharField(source='winner.username')
 
     class Meta:
         model = Game
-        fields = ['id', 'name', 'status', 'winner']
+        fields = ['id', 'name', 'status']

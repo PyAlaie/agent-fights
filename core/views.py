@@ -14,6 +14,10 @@ from .permissions import IsCreatorOrAdmin
 
 
 class EnvViewSet(APIView):
+    def get_serializer(self, *args, **kwargs):
+        """Return the serializer instance for form rendering in browsable API."""
+        return EnvSerializer()
+
     def get_parsers(self):
         # POST requires Multipart parsing for handling forms
         if self.request.method == 'POST':
@@ -101,6 +105,10 @@ class EnvGamesListView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 class AgentViewSet(APIView):
+    def get_serializer(self, *args, **kwargs):
+        """Return the serializer instance for form rendering in browsable API."""
+        return AgentSerializer()
+    
     def get_parsers(self):
         # POST requires Multipart parsing for handling forms
         if self.request.method == 'POST':
@@ -176,6 +184,10 @@ class AgentViewSet(APIView):
             return Response(data=serializer.data, status=HTTP_200_OK)
 
 class GameViewSet(APIView):
+    def get_serializer(self, *args, **kwargs):
+        """Return the serializer instance for form rendering in browsable API."""
+        return GameSerializer()
+    
     def get_permissions(self):
         # PATCH/PUT require Ownership permissions
         if self.request.method in ['PATCH', 'PUT']:
@@ -285,11 +297,15 @@ class UserAgentsListView(APIView):
         return paginator.get_paginated_response(serializer.data)
     
 class UserGamesListView(APIView):
+    def get_serializer(self, *args, **kwargs):
+        """Return the serializer instance for form rendering in browsable API."""
+        return EnvSerializer()
+    
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, id):
+    def get(self, request):
         # A list of object retreival
-        games = request.user.games.order_by('-updated_at')
+        games = request.user.created_games.all().order_by('-updated_at')
 
         # setup of pagination
         paginator = PageNumberPagination()
@@ -297,3 +313,28 @@ class UserGamesListView(APIView):
 
         serializer = UserGamesListSerializer(instance=paginated_queryset, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+class StartGameAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        pass
+        # user_id = request.user.id
+        # game_id = request.data.get('game_id')
+
+        # if not game_id:
+        #     return Response(
+        #         {"error": "game_id is required"}, 
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
+
+        # task = my_background_task.delay(user_id, game_id)
+
+        # return Response(
+        #     {
+        #         "message": "Task has been started successfully.",
+        #         "task_id": task.id,
+        #         "status_url": f"/api/task-status/{task.id}/"  # Optional: endpoint to check status
+        #     },
+        #     status=status.HTTP_202_ACCEPTED
+        # )
