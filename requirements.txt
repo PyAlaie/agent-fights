@@ -4,3 +4,4 @@ pysqlite3==0.6.0
 python-dotenv==1.2.1
 sqlparse==0.5.5
 djangorestframework ==3.16.1
+celery==5.3.6
