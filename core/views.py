@@ -4,7 +4,7 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.status import * 
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
-
+from core.tasks import create_game_container_task
 from .models import Env, Agent, Game
 from .serializers import EnvSerializer, EnvGamesListSerializer, \
     AgentSerializer, GameSerializer, GameAgentsListSerializer, \
@@ -314,27 +314,16 @@ class UserGamesListView(APIView):
         serializer = UserGamesListSerializer(instance=paginated_queryset, many=True)
         return paginator.get_paginated_response(serializer.data)
 
-class StartGameAPI(APIView):
+class StartGameView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        pass
-        # user_id = request.user.id
-        # game_id = request.data.get('game_id')
+        task = create_game_container_task.delay(kwargs.get('id'))
 
-        # if not game_id:
-        #     return Response(
-        #         {"error": "game_id is required"}, 
-        #         status=status.HTTP_400_BAD_REQUEST
-        #     )
-
-        # task = my_background_task.delay(user_id, game_id)
-
-        # return Response(
-        #     {
-        #         "message": "Task has been started successfully.",
-        #         "task_id": task.id,
-        #         "status_url": f"/api/task-status/{task.id}/"  # Optional: endpoint to check status
-        #     },
-        #     status=status.HTTP_202_ACCEPTED
-        # )
+        return Response(
+            {
+                "message": "Task has been started successfully.",
+                "task_id": task.id,
+            },
+            status=HTTP_202_ACCEPTED
+        )

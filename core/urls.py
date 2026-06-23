@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import EnvViewSet, EnvGamesListView, AgentViewSet, \
     GameViewSet, GameAgentsListView, UserEnvsListView, UserAgentsListView, \
-    UserGamesListView
+    UserGamesListView, StartGameView
 
 urlpatterns = [
     # list, retrieve, create, update, and partial update for Env
@@ -18,6 +18,7 @@ urlpatterns = [
     # list, retrieve, create, update, and partial update for Game
     path('games/', GameViewSet.as_view()),
     path('games/<int:id>/', GameViewSet.as_view()),
+    path('games/<int:id>/start', StartGameView.as_view()),
     path('games/<int:id>/agents', GameAgentsListView.as_view()),
 
     # list of user's envs, agents, and games
