@@ -11,6 +11,7 @@ from .serializers import EnvSerializer, EnvGamesListSerializer, \
     UserEnvsListSerializer, UserAgentsListSerializer, UserGamesListSerializer
 
 from .permissions import IsCreatorOrAdmin
+from django.shortcuts import get_object_or_404
 
 
 class EnvViewSet(APIView):
@@ -318,7 +319,13 @@ class StartGameView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        task = create_game_container_task.delay(kwargs.get('id'))
+        game_id = kwargs.get('id')
+        game = get_object_or_404(Game, pk=game_id)
+
+        if game.status != Game.StatusChoices.ready:
+            return Response({"message":"brother oewwwwww"},status=HTTP_200_OK)
+        
+        task = create_game_container_task.delay(game_id)
 
         return Response(
             {
