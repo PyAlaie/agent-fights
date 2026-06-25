@@ -46,8 +46,14 @@ def create_game_container_task(game_id):
         pipe.write(j_payload)
         pipe.flush()
 
-    # container.stop()
+    # reading the game events from pipe
+    with open(pipe_path, 'r') as pipe:
+        while True:
+            raw = pipe.readline()
+            logging.info(raw)
+            if not raw:
+                logger.info("Game ended!")
+                break
 
-    print("DOne")
-
-
+    container_logs = container.logs()
+    print(container_logs)
