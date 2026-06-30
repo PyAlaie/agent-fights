@@ -1,85 +1,97 @@
-import time
 import importlib.util, sys, pathlib
 import pyseccomp, logging, signal
-import time
+import time, json
 from BaseWrapper import BaseWrapper
 
+def get_module_logger(mod_name):
+    """
+    To use this, do logger = get_module_logger(__name__)
+    """
+
+    logger = logging.getLogger(mod_name)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s [%(name)-12s] %(levelname)-8s %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+logger = get_module_logger(__name__)
+
 class Wrapper(BaseWrapper):
-    def __init__(self, file_path, connection, time_limit=None):
+    def __init__(self, file_path, connection):
         self.file_path = file_path
         self.connection = connection
 
-        self._setup_seccomp()
-        self.agent_module = self._import_agent() 
+        self.agent_namespace = {}
+
+        try:
+            self._import_agent() 
+        except Exception as e:
+            logger.error(f"ERROR: {e}")
+            raise e
         
-        self.killed = False
-        self.time_passed = 0
-        self.time_out = False
-        self.time_limit = time_limit
-
         super().__init__()
-
-
-    def _sigsys_handler(self, signum, frame):
-        """ This handler is ran when some not allowed syscall is being used """
-
-        # TODO: write this hanlder
-        self.killed = True
-        raise KeyError("mamamia")
-
 
     def _setup_seccomp(self):
         """ Using seccomp to filter syscalls in the process """
-        signal.signal(signal.SIGSYS, self._sigsys_handler)
+
+        f = pyseccomp.SyscallFilter(defaction=pyseccomp.KILL)
         
-        f = pyseccomp.SyscallFilter(defaction=pyseccomp.LOG)
         allowed_syscalls = [
-            'read', 'write', 'close', 'mmap', 'munmap',
-            'brk', 'exit', 'exit_group', 'futex',
-            'open', 'openat', 'stat', 'fstat',
-            'getpid', 'getuid', 'geteuid'
+            'read', 'write', 'brk', 'mmap', 'munmap', 'getpid'
+            # 'getpid', 'getuid', 'geteuid'
         ]
+
         for syscall in allowed_syscalls:
             try:
                 f.add_rule(pyseccomp.ALLOW, syscall)
             except Exception as e:
-                logging.warning(f"Could not add syscall {syscall}: {e}")
+                logger.warning(f"Could not add syscall {syscall}: {e}")
+        
         f.load()
-        logging.info(f"Seccomp loaded")
+        logger.info("Seccomp loaded")
         
 
     def _import_agent(self):
-        """ Imports agent code """
-        module_name = "agent"
+        """
+        Reads and executes the agent code.
+        Writes the agent namespace into self.agent_namespace
+        """
 
         abs_file_path = pathlib.Path(self.file_path).resolve()
-        
-        spec = importlib.util.spec_from_file_location(module_name, abs_file_path)
-        if spec is None:
-            raise ImportError(f"Could not load spec for {abs_file_path}")
-        
-        module = importlib.util.module_from_spec(spec)
-        
-        sys.modules[module_name] = module
-        
-        spec.loader.exec_module(module)
-        
-        return module
+
+        with open(abs_file_path, "r", encoding="utf-8") as f:
+            source = f.read()
+
+        self._setup_seccomp()
+
+        code = compile(source, str(abs_file_path), "exec")
+        exec(code, self.agent_namespace)
+
+        if self.agent_namespace.get("main") is None:
+            raise ImportError("No main function found!")
+
+        return self.agent_namespace
 
 
     def run(self):
+        """
+        The function that runs the game loop for the agent's main function
+        """
         while True:
             observation = self.connection.recv()
+            
+            try:
+                action = self.agent_namespace.get("main")(observation)
+                action_json = json.dumps(action)
 
-            start = time.time()
-            action = self.agent_module.main(observation)
-            end = time.time()
+                self.connection.send(action_json)
 
-            self.time_passed += end - start
-
-            # TODO: send killed, time passed and timeout
-
-            self.connection.send(action)
+            except Exception as e:
+                logger.error(f"Error: {e}")
+                raise e
 
 
     @staticmethod

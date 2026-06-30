@@ -2,24 +2,65 @@ import json
 from wrapper import Wrapper 
 from env_wrapper import EnvWrapper
 import multiprocessing
+import logging, sys, time
+
+def get_module_logger(mod_name):
+    """
+    To use this, do logger = get_module_logger(__name__)
+    """
+
+    logger = logging.getLogger(mod_name)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s [%(name)-12s] %(levelname)-8s %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+logger = get_module_logger(__name__)
+
+
+class AgentInfo:
+    def __init__(
+            self, 
+            agent_id, 
+            pipe_connection=None,
+            wrapper_process=None,
+            turn=None,
+            filename=None,
+        ):
+        self.agent_id = agent_id
+        self.pipe_connection = pipe_connection
+        self.wrapper_process = wrapper_process
+        self.turn = turn
+        self.filename = filename
+        self.total_time_passed = 0
+
 
 class CodeRunner:
     PIPE_PATH = '/stdin_pipe'
     
     def __init__(self):
-        self.agents = {} # stored as (agent_id, code_file)
-        self.agent_conns = {} # stored as (agent_id, connection)
-        self.agent_wrapper_processes = {} # stored as (agent_id, wrapper_process)
+        logger.info("Initializing CodeRunner...")
+        
+        self.agents : dict[str, AgentInfo] = {} # stored as agent_id -> AgentInfo
         self.env_connection = None
         self.env_wrapper_process = None
         
-        self.turns = {} # stored as (turn, agent_id)
+        self.turns = {} # stored as turn -> agent_id 
         self.timestamp = 0
 
-        raw_payload = self._get_code_files_raw()
-        self._process_code_files(raw_payload)
+        self.raw_payload = self._get_code_files_raw()
 
+        logger.info("CodeRunner inisialized.")
+
+    
     def _get_code_files_raw(self):
+        """
+        Reads the raw code files of the agents and the env
+        """
+
         while True:
             try:
                 with open(self.PIPE_PATH, 'r') as pipe:
@@ -27,14 +68,26 @@ class CodeRunner:
                     if not line:
                         break
                     line = line.strip()
+                    logger.info("Recienved code files.")
                     return line
             except Exception as e:
                 raise IOError(f"Error: {e}")
 
 
-    def _process_code_files(self, raw_json: str):
-        """Writes env code in to env.py and writes agents into self.agents"""
-        payload = json.loads(raw_json)
+    def _setup_game(self):
+        """
+        1. Writes env code in to env.py
+        2. Creates the connection to env wrapper 
+        3. Writes each agent code into a file
+        4. Creates the connection to each agent wrapper 
+        5. Creates wrapper process in self.agent_wrapper_processes as (agent_id -> wrapper_process)
+        6. Assigns a turn number for each agent (starting from 0)
+        7. Writes all into self.agents as (agent_id -> agentInfo). 
+        """
+
+        logger.info("Setup game ...")
+
+        payload = json.loads(self.raw_payload)
 
         env = payload.get('env')
         agents = payload.get('agents')
@@ -43,15 +96,37 @@ class CodeRunner:
             file.write(env)
             file.close()
 
+        self._establish_env_connection()
+
+        # Creating Agents
+        turn = 0
         for agent_id, code in agents.items():
+            agent_info = AgentInfo(agent_id)
+
+            # Writing the codes of agents 
             filename = f"agent_{agent_id}.py" 
             with open(filename, 'w') as file:
                 file.write(code)
-                self.agents[agent_id] = filename
-                file.close()
+                agent_info.filename = filename
+            
+            agent_wrapper, connection = self._establish_agent_connections(agent_id, filename)
 
+            agent_info.wrapper_process = agent_wrapper
+            agent_info.pipe_connection = connection
 
+            agent_info.turn = turn
+            self.turns[turn] = agent_id
+            
+            self.agents[agent_id] = agent_info
+            turn += 1
+
+        logger.info("Game setup finished!")
+
+    
     def _check_env_data_validation(self, env_data:dict):
+        """
+        Checks the structure of env_data to be correct
+        """
         turn = env_data.get("turn")
         terminated = env_data.get("terminated")
         observation = env_data.get("observation")
@@ -61,82 +136,149 @@ class CodeRunner:
         assert isinstance(turn, int), f"turn should be int, got: {type(turn).__name__}" 
         assert isinstance(terminated, bool), f"terminated should be int, got: {type(turn).__name__}" 
 
-    def _make_record(self, action):
-        return str(action) + '\n'
-
+    
     def _increase_timestamp(self):
         self.timestamp += 1
 
+    
     def _finish_game(self):
         """ 
-            Kills the agents and env processes and finishs the game.
-            It first tries to kill the processes garcefully with SIGTERM,
-            Then if not terminated, kills them.
+        1. Announces the winner of the game
+        2. Kills the agents and env processes and finishs the game.
         """
+        # TODO: Announce the winner
         
-        # Terminate env
-        self.env_wrapper_process.terminate()
+        # Kill env
+        self.env_wrapper_process.kill()
 
-        # Terminate agents
-        for agent, wrapper in self.agent_wrapper_processes.items():
-            wrapper.terminate()
+        # Kill agents
+        for agent, agent_info in self.agents.items():
+            agent_info.wrapper_process.kill()
 
-        # TODO: kill the processes if not terminated
 
-    def main(self):
-        # creating the env
+    def _make_event_message(self, action, agent_id, timestamp):
+        game_event = {
+            "timestamp": timestamp,
+            "agent_id": agent_id,
+            "action": action
+        }
+
+        return json.dumps(game_event)
+
+    
+    def _establish_env_connection(self):
+        """ 
+        Creates the connection to env wrapper and writes the connection to self.env_connection
+        and the wrapper process is written into self.env_wrapper_process
+        """
+
         env_conn, _child_env_conn = multiprocessing.Pipe(duplex=True)
-        env_wrapper = multiprocessing.Process(target=EnvWrapper.create_env_wrapper, args=('env.py', _child_env_conn))
+        env_wrapper = multiprocessing.Process(target=EnvWrapper.create_env_wrapper, args=('env.py', _child_env_conn), name="env")
         env_wrapper.start()
         self.env_connection = env_conn
         self.env_wrapper_process = env_wrapper
 
-        # creating the agent wrappers
-        turn = 0
-        for agent_id, code_file in self.agents.items():
-            parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
+    
+    def _establish_agent_connections(self, agent_id, filename):
+        """ 
+        Creates the wrapper and the connection to the wrapper for agent  
+        returns wrapper, connection
+        """
 
-            agent_wrapper = multiprocessing.Process(target=Wrapper.create_wrapper, args=(code_file, child_conn))
-            agent_wrapper.start()
+        parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
 
-            self.agent_wrapper_processes[agent_id] = agent_wrapper
-            self.agent_conns[agent_id] = parent_conn
-            self.turns[turn] = agent_id
-            turn += 1
+        agent_wrapper = multiprocessing.Process(target=Wrapper.create_wrapper, args=(filename, child_conn), name=f"agent-{agent_id}")
+        agent_wrapper.start()
+
+        return agent_wrapper, parent_conn
+    
+    
+    def _get_agent_action(self, env_data, agent_id) -> str:
+        """
+        Passes the env_data to agent and gets the action from agent
+        """
         
-        # The game loop
+        agent_info = self.agents[agent_id]
+        agent_pipe_connection = agent_info.pipe_connection 
+
+        exited = False
+        time_passed = 0
+        action = None
+        
+        try:
+            agent_pipe_connection.send(env_data)
+
+            start = time.time()
+            action = agent_pipe_connection.recv()
+            end = time.time()
+
+            time_passed = end - start
+            
+            agent_info.total_time_passed += time_passed
+
+        except Exception as e:
+            exited = True
+            logger.info(f"Error getting agent action: {e}")
+
+        payload = {
+            "action": action,
+            "exited": exited,
+            "time_passed": time_passed,
+            "total_time_passed": agent_info.total_time_passed,
+        }
+
+        return json.dumps(payload)
+
+
+    def main(self):
+        self._setup_game()
+        
+        # Opening the pipe file to record game events
         with open(self.PIPE_PATH, 'w') as pipe:
+            
+            def write_into_pipe(message):
+                pipe.write(str(message) + '\n')
+                pipe.flush()
+
+            # The game loop
             while True:
-                # 1. get observation from env (containing turn)
-                env_data = env_conn.recv()
+                # Get observation from env (containing turn)
+                env_data = self.env_connection.recv()
                 env_data_parsed = json.loads(env_data)
 
-                # 1.1 check observation validity (terminated, etc)
-                self._check_env_data_validation(env_data_parsed)
+                # Check observation validity (terminated, etc)
+                try:
+                    self._check_env_data_validation(env_data_parsed)
+                except Exception as e:
+                    logger.error(f"Error in data comming from env: {e}")
+                    self._finish_game()
+                    break
                 
                 turn = env_data_parsed.get("turn")
                 terminated = env_data_parsed.get("terminated")
-                print(terminated)
                 if terminated:
                     self._finish_game()
                     break
                 observation = env_data_parsed.get("observation")
                 
-                # 2. pass the obsevation to the agent with turn
+                # Pass the obsevation to the agent with turn 
+                # and get the action from agent 
                 agent_id = self.turns[turn] 
-                self.agent_conns[agent_id].send(env_data)
+                action = self._get_agent_action(env_data, agent_id)
 
-                # 3. get the action from agent 
-                action = self.agent_conns[agent_id].recv()
+                # Send the record
+                game_event = self._make_event_message(action, agent_id, self.timestamp)
+                write_into_pipe(game_event)
 
-                # 3.1 send the record
-                pipe.write(self._make_record(action))
-                pipe.flush()
-
-                # 4. step the action in the env
-                env_conn.send(action)
+                # Step the action in the env
+                self.env_connection.send(action)
 
                 self._increase_timestamp()
+
+        # Opening the pipe file to send the final results one last time  
+        with open(self.PIPE_PATH, 'w') as pipe:
+            # TODO: do this part
+            pass
 
 
 if __name__ == "__main__":

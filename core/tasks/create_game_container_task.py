@@ -58,15 +58,17 @@ def create_game_container_task(game_id):
                 if not raw_event:
                     logger.info("Game ended!")
                     break
-                
-                logging.info(raw_event)
-                events.append(raw_event)
+
+                raw_event = raw_event.strip()
+                game_event = json.loads(raw_event)
+                logging.info(game_event)
+                events.append(game_event)
         
         events_json = json.dumps(events)
 
         container_logs = container.logs().decode("utf-8")
 
-        temp_agent = Agent.objects.first()
+        temp_agent = Agent.objects.first() # TODO: fix this temp agent as winner thing
         game_result = GameResult(game=game, winner=temp_agent, events=events_json, container_log=container_logs)
         game_result.save()
 
