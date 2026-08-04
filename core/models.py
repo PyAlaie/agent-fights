@@ -45,43 +45,30 @@ class Game(Base):
     
     name = models.CharField(max_length=50)
     env = models.ForeignKey(to=Env, on_delete=models.CASCADE, related_name='games')
-    agents = models.ManyToManyField(to=Agent, related_name='games', null=True)
+    agents = models.ManyToManyField(to=Agent, related_name='games', null=True, unique=True)
     status = models.CharField(max_length=10, choices=StatusChoices, default=StatusChoices.created)
     creator = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_games')
 
     def clean(self):
-        error_messages = {NON_FIELD_ERRORS: []}
+        # env integrity of agents and game
+        for agent in self.agents:
+            if agent.env != self.env:
+                raise ValidationError('Environment of Agent are Game are not the same.')
 
-        # agent-env compatibility
-        if self.pk:
-            for agent in self.agents.all():
-                if agent.env != self.env:
-                    error_messages[NON_FIELD_ERRORS].append(f"agent {agent} is not compatible with the environment {self.env}")
-            
-            # agent count bound validation
-            if self.agents.exists():
-                if self.agents.count() > self.env.max_agents:
-                    error_messages[NON_FIELD_ERRORS].append('game agent count exceeded the maximum')
+        # checking if the winner is in the agents
+        if self.winner:
+            if self.winner not in self.agents:
+                raise ValidationError('Winner Agent Must be Present Among the Agents.')
 
-            if len(error_messages[NON_FIELD_ERRORS]) != 0: raise ValidationError(error_messages)
+        min_agents, max_agents = self.env.min_agents, self.env.max_agents
+        # checking if the agent count has exceeded the maximum possible
+        if self.agents.count() > max_agents:
+            raise ValidationError('Agent Count has Exceeded the Maximum.')
 
-    def save(self, **kwargs):
-        env = self.env
-        if self.pk: # TODO: fix it
-            if self.agents.count() > env.max_agents:
-                raise ValueError(f"Agent count exceeds max number of allowed agents: {self.agents.count()} > {env.max_agents}")
-            
-            if env.min_agents <= self.agents.count() <= env.max_agents and self.status == self.StatusChoices.created:
-                self.status = self.StatusChoices.ready
-
-        return super().save(**kwargs)    
-
-    def __repr__(self):
-        return f"{self.name} - {self.env.name}"
-    
-    def __str__(self):
-        return f"{self.name} - {self.env.name}"
-    
+        # checking if the agent count has reached the minimum, required for starting the game
+        if self.status in ['1', '2']:
+            if self.agents.count() < min_agents:
+                raise ValidationError('Agent Count has not Reached the Minimum, Required for Starting the Game.')
 
 class GameResult(Base):
     game = models.OneToOneField(to=Game, on_delete=models.CASCADE, null=False)
