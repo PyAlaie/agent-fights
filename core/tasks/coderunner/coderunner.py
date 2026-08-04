@@ -2,7 +2,8 @@ import json
 from wrapper import Wrapper 
 from env_wrapper import EnvWrapper
 import multiprocessing
-import logging, sys, time
+import logging, sys, time, signal, random
+from multiprocessing.connection import Connection
 
 def get_module_logger(mod_name):
     """
@@ -25,17 +26,19 @@ class AgentInfo:
     def __init__(
             self, 
             agent_id, 
-            pipe_connection=None,
-            wrapper_process=None,
+            pipe_connection : multiprocessing.connection.Connection=None,
+            wrapper_process : multiprocessing.Process=None,
             turn=None,
             filename=None,
+            time_remaining=None,
         ):
         self.agent_id = agent_id
-        self.pipe_connection = pipe_connection
+        self.pipe_connection : Connection = pipe_connection
         self.wrapper_process = wrapper_process
         self.turn = turn
         self.filename = filename
         self.total_time_passed = 0
+        self.time_remaining = time_remaining
 
 
 class CodeRunner:
@@ -116,6 +119,7 @@ class CodeRunner:
 
             agent_info.turn = turn
             self.turns[turn] = agent_id
+            agent_info.time_remaining = 3 # TODO: gotta change it
             
             self.agents[agent_id] = agent_info
             turn += 1
@@ -146,6 +150,7 @@ class CodeRunner:
         1. Announces the winner of the game
         2. Kills the agents and env processes and finishs the game.
         """
+        logger.info("Finishing game...")
         # TODO: Announce the winner
         
         # Kill env
@@ -156,11 +161,11 @@ class CodeRunner:
             agent_info.wrapper_process.kill()
 
 
-    def _make_event_message(self, action, agent_id, timestamp):
+    def _make_event_message(self, event_type, timestamp, event_data):
         game_event = {
+            "event_type": event_type,
             "timestamp": timestamp,
-            "agent_id": agent_id,
-            "action": action
+            "event_data": event_data,
         }
 
         return json.dumps(game_event)
@@ -197,28 +202,33 @@ class CodeRunner:
         """
         Passes the env_data to agent and gets the action from agent
         """
-        
+
         agent_info = self.agents[agent_id]
         agent_pipe_connection = agent_info.pipe_connection 
 
         exited = False
         time_passed = 0
         action = None
-        
+
         try:
             agent_pipe_connection.send(env_data)
 
             start = time.time()
-            action = agent_pipe_connection.recv()
+            if agent_pipe_connection.poll(agent_info.time_remaining):
+                action = agent_pipe_connection.recv()
+            else:
+                # The agent basically loses once its time limit is exceeded
+                agent_info.wrapper_process.kill()
+                raise TimeoutError("Time limit exceeded!")
             end = time.time()
 
             time_passed = end - start
-            
+            agent_info.time_remaining -= time_passed
             agent_info.total_time_passed += time_passed
 
         except Exception as e:
             exited = True
-            logger.info(f"Error getting agent action: {e}")
+            logger.info(f"Error getting {agent_id} action: {e}")
 
         payload = {
             "action": action,
@@ -267,7 +277,11 @@ class CodeRunner:
                 action = self._get_agent_action(env_data, agent_id)
 
                 # Send the record
-                game_event = self._make_event_message(action, agent_id, self.timestamp)
+                # 1. senf obs
+                game_event = self._make_event_message("obs", self.timestamp, env_data)
+                write_into_pipe(game_event)
+                # 2. senf action
+                game_event = self._make_event_message("act", self.timestamp, {"agent_id": agent_id, "action": action})
                 write_into_pipe(game_event)
 
                 # Step the action in the env

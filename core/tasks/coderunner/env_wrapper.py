@@ -2,6 +2,24 @@ import time
 import importlib.util, sys, pathlib
 from BaseEnv import AbstractEnv
 from BaseWrapper import BaseWrapper
+import logging
+
+def get_module_logger(mod_name):
+    """
+    To use this, do logger = get_module_logger(__name__)
+    """
+
+    logger = logging.getLogger(mod_name)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s [%(name)-12s] %(levelname)-8s %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
+
+logger = get_module_logger(__name__)
+
 class EnvWrapper(BaseWrapper):
     def __init__(self, file_path, connection):
         self.file_path = file_path
@@ -47,8 +65,10 @@ class EnvWrapper(BaseWrapper):
 
         while True:
             action = self.connection.recv()
+            logger.info(action)
             environment.step(action)
             env_data = environment.get_env_data()
+            logger.info(env_data)
             self.connection.send(env_data)
 
     @staticmethod

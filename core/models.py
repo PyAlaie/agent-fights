@@ -53,24 +53,26 @@ class Game(Base):
         error_messages = {NON_FIELD_ERRORS: []}
 
         # agent-env compatibility
-        for agent in self.agents.all():
-            if agent.env != self.env:
-                error_messages[NON_FIELD_ERRORS].append(f"agent {agent} is not compatible with the environment {self.env}")
-        
-        # agent count bound validation
-        if self.agents.exists():
-            if self.agents.count() > self.env.max_agents:
-                error_messages[NON_FIELD_ERRORS].append('game agent count exceeded the maximum')
+        if self.pk:
+            for agent in self.agents.all():
+                if agent.env != self.env:
+                    error_messages[NON_FIELD_ERRORS].append(f"agent {agent} is not compatible with the environment {self.env}")
+            
+            # agent count bound validation
+            if self.agents.exists():
+                if self.agents.count() > self.env.max_agents:
+                    error_messages[NON_FIELD_ERRORS].append('game agent count exceeded the maximum')
 
-        if len(error_messages[NON_FIELD_ERRORS]) != 0: raise ValidationError(error_messages)
+            if len(error_messages[NON_FIELD_ERRORS]) != 0: raise ValidationError(error_messages)
 
     def save(self, **kwargs):
         env = self.env
-        if self.agents.count() > env.max_agents:
-            raise ValueError(f"Agent count exceeds max number of allowed agents: {self.agents.count()} > {env.max_agents}")
-        
-        if env.min_agents <= self.agents.count() <= env.max_agents and self.status == self.StatusChoices.created:
-            self.status = self.StatusChoices.ready
+        if self.pk: # TODO: fix it
+            if self.agents.count() > env.max_agents:
+                raise ValueError(f"Agent count exceeds max number of allowed agents: {self.agents.count()} > {env.max_agents}")
+            
+            if env.min_agents <= self.agents.count() <= env.max_agents and self.status == self.StatusChoices.created:
+                self.status = self.StatusChoices.ready
 
         return super().save(**kwargs)    
 

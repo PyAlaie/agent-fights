@@ -322,8 +322,8 @@ class StartGameView(APIView):
         game_id = kwargs.get('id')
         game = get_object_or_404(Game, pk=game_id)
 
-        if game.status != Game.StatusChoices.ready:
-            return Response({"message":"brother oewwwwww"},status=HTTP_200_OK)
+        # if game.status != Game.StatusChoices.ready:
+        #     return Response({"message":"brother oewwwwww"},status=HTTP_200_OK)
         
         task = create_game_container_task.delay(game_id)
 

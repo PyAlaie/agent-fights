@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Env, Agent, Game
+from .models import Env, Agent, Game, GameResult
 
 class EnvSerializer(serializers.ModelSerializer):
     class Meta:
@@ -34,11 +34,21 @@ class AgentSerializer(serializers.ModelSerializer):
         validated_data['creator'] = self.context['request'].user
         return super().create(validated_data)
     
+
+class GameResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GameResult
+        fields = ['id', 'events']
+        # read_only_fields = ['id', 'status', 'creator']
+
 class GameSerializer(serializers.ModelSerializer):
+    gameresult = GameResultSerializer(read_only=True)
     class Meta:
         model = Game
-        fields = ['id', 'name', 'env', 'agents', 'status', 'creator', 'winner']
-        read_only_fields = ['id', 'status', 'creator']
+        result = GameResultSerializer(read_only=True)
+        fields = "__all__"
+        # fields = ['id', 'name', 'env', 'agents', 'status', 'creator', 'gameresult']
+        # read_only_fields = ['id', 'status', 'creator']
 
     def validate(self, attrs):
         if self.instance:

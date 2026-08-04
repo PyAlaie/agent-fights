@@ -2,6 +2,7 @@ import importlib.util, sys, pathlib
 import pyseccomp, logging, signal
 import time, json
 from BaseWrapper import BaseWrapper
+import resource
 
 def get_module_logger(mod_name):
     """
@@ -20,9 +21,14 @@ def get_module_logger(mod_name):
 logger = get_module_logger(__name__)
 
 class Wrapper(BaseWrapper):
-    def __init__(self, file_path, connection):
+    def __init__(self, file_path, connection, memory_limit=10, cpu_limit=2):
         self.file_path = file_path
         self.connection = connection
+
+        self.cpu_limit = cpu_limit
+        self.memory_limit = memory_limit
+
+        # self._set_limits()
 
         self.agent_namespace = {}
 
@@ -34,13 +40,19 @@ class Wrapper(BaseWrapper):
         
         super().__init__()
 
+    
+    def _set_limits(self):
+        resource.setrlimit(resource.RLIMIT_AS, (self.memory_limit, self.memory_limit))
+        # resource.setrlimit(resource.RLIMIT_CPU, (self.cpu_limit, self.cpu_limit))
+
+
     def _setup_seccomp(self):
         """ Using seccomp to filter syscalls in the process """
 
         f = pyseccomp.SyscallFilter(defaction=pyseccomp.KILL)
         
         allowed_syscalls = [
-            'read', 'write', 'brk', 'mmap', 'munmap', 'getpid'
+            'read', 'write', 'brk', 'mmap', 'munmap', 'getpid',
             # 'getpid', 'getuid', 'geteuid'
         ]
 
@@ -88,6 +100,10 @@ class Wrapper(BaseWrapper):
                 action_json = json.dumps(action)
 
                 self.connection.send(action_json)
+     
+            except MemoryError as e:
+                logger.error(f"Memory limit exceeded: {e}")
+                raise e
 
             except Exception as e:
                 logger.error(f"Error: {e}")
