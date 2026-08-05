@@ -36,17 +36,16 @@ class Agent(Base):
         return f"{self.name} - {self.env.name}"
 
 class Game(Base):
-    class StatusChoices(models.TextChoices):
-        created = 'Created'
-        ready = 'Ready'
-        started = 'Started'
-        finished = 'Finished'
-        failed = 'Failed'
+    status_choice = {
+        '0': 'created',
+        '1': 'started',
+        '2': 'failed',
+        '3': 'finished'}
     
     name = models.CharField(max_length=50)
     env = models.ForeignKey(to=Env, on_delete=models.CASCADE, related_name='games')
     agents = models.ManyToManyField(to=Agent, related_name='games', null=True, unique=True)
-    status = models.CharField(max_length=10, choices=StatusChoices, default=StatusChoices.created)
+    status = models.CharField(max_length=10, choices=status_choice, default='0')
     creator = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_games')
 
     def clean(self):
@@ -66,7 +65,7 @@ class Game(Base):
             raise ValidationError('Agent Count has Exceeded the Maximum.')
 
         # checking if the agent count has reached the minimum, required for starting the game
-        if self.status in ['1', '2']:
+        if self.status in ['1', '2', '3']:
             if self.agents.count() < min_agents:
                 raise ValidationError('Agent Count has not Reached the Minimum, Required for Starting the Game.')
 
