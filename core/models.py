@@ -54,11 +54,6 @@ class Game(Base):
             if agent.env != self.env:
                 raise ValidationError('Environment of Agent are Game are not the same.')
 
-        # checking if the winner is in the agents
-        if self.winner:
-            if self.winner not in self.agents:
-                raise ValidationError('Winner Agent Must be Present Among the Agents.')
-
         min_agents, max_agents = self.env.min_agents, self.env.max_agents
         # checking if the agent count has exceeded the maximum possible
         if self.agents.count() > max_agents:
