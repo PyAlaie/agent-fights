@@ -44,7 +44,7 @@ class Game(Base):
     
     name = models.CharField(max_length=50)
     env = models.ForeignKey(to=Env, on_delete=models.CASCADE, related_name='games')
-    agents = models.ManyToManyField(to=Agent, related_name='games', null=True, unique=True)
+    agents = models.ManyToManyField(to=Agent, related_name='games', null=True)
     status = models.CharField(max_length=10, choices=status_choice, default='0')
     creator = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_games')
 
