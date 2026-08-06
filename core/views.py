@@ -124,11 +124,13 @@ class AgentSubmissionView(APIView):
             return Response(data={}, status=HTTP_200_OK)
 
 class StartGameView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCreatorOrAdmin]
 
     def get(self, request, *args, **kwargs):
         game_id = kwargs.get('id')
         game = get_object_or_404(Game, pk=game_id)
+
+        self.check_object_permissions(request, game)
 
         # if game.status != Game.StatusChoices.ready:
         #     return Response({"message":"brother oewwwwww"},status=HTTP_200_OK)
