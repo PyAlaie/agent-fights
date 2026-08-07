@@ -52,12 +52,20 @@ class AgentSubmissionSerializer(serializers.Serializer):
             if self.instance.agents.count() == max_agents:
                 raise ValidationError('The Game has Reached its Maximum Agent Count.')
 
+        if self.instance.env != agent.env:
+            raise ValidationError('The Agent is Not Compatible With the Env of the Game.')
+
         return attrs
 
     def update(self, instance, validated_data):
         self.instance.agents.add(validated_data['agent_id'])
         self.instance.save()
         return self.instance
-        
+
+class StartGameSerializer(serializers.Serializer):
+
+    def validate(self, attrs):
+        if self.instance.status != '0':
+            raise ValidationError('The Game has Already Been Started Once!')
          
-        
+        return attrs
