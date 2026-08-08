@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Play, Upload, Shield, Bot, Trophy, LogOut, PlusCircle, UserCheck, Search, Edit3, AlertCircle, Code, Eye, EyeOff } from 'lucide-react';
+import { Play, Upload, Shield, Bot, Trophy, LogOut, PlusCircle, UserCheck, Search, Edit3, AlertCircle, List, RefreshCw, Download } from 'lucide-react';
 
 // 1. Helper Function for CSRF Token Parsing
 function getCookie(name) {
@@ -49,19 +49,19 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ username: '', password: '', isSignup: false });
   const [authError, setAuthError] = useState('');
 
-  const [activeTab, setActiveTab] = useState('games');
+  const [activeTab, setActiveTab] = useState('lists');
+
+  // Directory / List View States
+  const [envList, setEnvList] = useState([]);
+  const [agentList, setAgentList] = useState([]);
+  const [gameList, setGameList] = useState([]);
+  const [isLoadingLists, setIsLoadingLists] = useState(false);
 
   // Lookup IDs & Found Data States
   const [lookup, setLookup] = useState({ envId: '', agentId: '', gameId: '' });
   const [foundEnv, setFoundEnv] = useState(null);
   const [foundAgent, setFoundAgent] = useState(null);
   const [foundGame, setFoundGame] = useState(null);
-
-  // Code Viewer States
-  const [envCode, setEnvCode] = useState(null);
-  const [showEnvCode, setShowEnvCode] = useState(false);
-  const [agentCode, setAgentCode] = useState(null);
-  const [showAgentCode, setShowAgentCode] = useState(false);
 
   // Edit (PUT / PATCH) States
   const [editEnvData, setEditEnvData] = useState({ name: '', min_agents: 1, max_agents: 10, file: null });
@@ -110,7 +110,32 @@ export default function App() {
     }
   };
 
-  // --- AUTHENTICATION WITH ERROR HANDLING ---
+  // --- AUTHENTICATED FILE DOWNLOAD HANDLER ---
+  const handleDownloadFile = async (fileUrl, fileName = 'download.py') => {
+    try {
+      const response = await axios.get(fileUrl, {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+
+      const extractedName = fileUrl.split('/').pop() || fileName;
+      link.setAttribute('download', extractedName);
+
+      document.body.appendChild(link);
+      link.click();
+
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      notify('File downloaded successfully!', 'success');
+    } catch (err) {
+      handleApiError(err, 'Failed to download file');
+    }
+  };
+
+  // --- AUTHENTICATION ---
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -151,25 +176,45 @@ export default function App() {
     }
   };
 
-  // --- CODE FETCHING ---
-  const fetchCode = async (fileUrl, setCodeState) => {
+  // --- FETCH ALL LISTS API CALLS ---
+  const fetchAllLists = async () => {
+    setIsLoadingLists(true);
     try {
-      const res = await axios.get(fileUrl, { responseType: 'text' });
-      setCodeState(res.data);
+      const [envRes, agentRes, gameRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/envs/`),
+        axios.get(`${API_BASE}/api/agents/`),
+        axios.get(`${API_BASE}/api/games/`),
+      ]);
+
+      setEnvList(Array.isArray(envRes.data) ? envRes.data : envRes.data.results || []);
+      setAgentList(Array.isArray(agentRes.data) ? agentRes.data : agentRes.data.results || []);
+      setGameList(Array.isArray(gameRes.data) ? gameRes.data : gameRes.data.results || []);
+      notify('Directories refreshed successfully.', 'info');
     } catch (err) {
-      setCodeState('# Failed to load source code from server.');
+      handleApiError(err, 'Failed to fetch directory lists');
+    } finally {
+      setIsLoadingLists(false);
     }
   };
 
-  // --- LOOKUP ACTIONS ---
-  const fetchEnv = async (e) => {
+  useEffect(() => {
+    if (user && activeTab === 'lists') {
+      fetchAllLists();
+    }
+  }, [user, activeTab]);
+
+  // --- SINGLE LOOKUP ACTIONS ---
+  const fetchEnv = async (e, id = null) => {
     e?.preventDefault();
-    setShowEnvCode(false);
-    setEnvCode(null);
+    const targetId = id || lookup.envId;
+    if (!targetId) return;
+
     try {
-      const res = await axios.get(`${API_BASE}/api/envs/${lookup.envId}`);
+      const res = await axios.get(`${API_BASE}/api/envs/${targetId}/`);
       setFoundEnv(res.data);
       setEditEnvData({ name: res.data.name, min_agents: res.data.min_agents, max_agents: res.data.max_agents, file: null });
+      setLookup((prev) => ({ ...prev, envId: targetId }));
+      if (id) setActiveTab('environments');
       notify(`Loaded Environment #${res.data.id}`, 'success');
     } catch (err) {
       setFoundEnv(null);
@@ -177,14 +222,17 @@ export default function App() {
     }
   };
 
-  const fetchAgent = async (e) => {
+  const fetchAgent = async (e, id = null) => {
     e?.preventDefault();
-    setShowAgentCode(false);
-    setAgentCode(null);
+    const targetId = id || lookup.agentId;
+    if (!targetId) return;
+
     try {
-      const res = await axios.get(`${API_BASE}/api/agents/${lookup.agentId}`);
+      const res = await axios.get(`${API_BASE}/api/agents/${targetId}/`);
       setFoundAgent(res.data);
       setEditAgentData({ name: res.data.name, env: res.data.env, file: null });
+      setLookup((prev) => ({ ...prev, agentId: targetId }));
+      if (id) setActiveTab('agents');
       notify(`Loaded Agent #${res.data.id}`, 'success');
     } catch (err) {
       setFoundAgent(null);
@@ -192,12 +240,17 @@ export default function App() {
     }
   };
 
-  const fetchGame = async (e) => {
+  const fetchGame = async (e, id = null) => {
     e?.preventDefault();
+    const targetId = id || lookup.gameId;
+    if (!targetId) return;
+
     try {
-      const res = await axios.get(`${API_BASE}/api/games/${lookup.gameId}`);
+      const res = await axios.get(`${API_BASE}/api/games/${targetId}/`);
       setFoundGame(res.data);
       setEditGameData({ name: res.data.name, env: res.data.env });
+      setLookup((prev) => ({ ...prev, gameId: targetId }));
+      if (id) setActiveTab('games');
       notify(`Loaded Game #${res.data.id}`, 'success');
     } catch (err) {
       setFoundGame(null);
@@ -215,9 +268,10 @@ export default function App() {
     if (envData.file) formData.append('code_file', envData.file);
 
     try {
-      const res = await axios.post(`${API_BASE}/api/envs`, formData);
+      const res = await axios.post(`${API_BASE}/api/envs/`, formData);
       notify(`Environment Created! (ID: ${res.data.id})`, 'success');
       setEnvData({ name: '', min_agents: 1, max_agents: 4, file: null });
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to create environment');
     }
@@ -234,6 +288,7 @@ export default function App() {
       const res = await axios.post(`${API_BASE}/api/agents/`, formData);
       notify(`Agent Created! (ID: ${res.data.id})`, 'success');
       setAgentData({ name: '', env: '', file: null });
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to upload agent');
     }
@@ -248,6 +303,7 @@ export default function App() {
       });
       notify(`Game Room Created! (ID: ${res.data.id})`, 'success');
       setGameData({ name: '', env: '' });
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to create game room');
     }
@@ -256,10 +312,11 @@ export default function App() {
   const handleSubmitAgentToGame = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_BASE}/api/games/${submissionData.gameId}/agent-submission`, {
+      await axios.post(`${API_BASE}/api/games/${submissionData.gameId}/agent-submission/`, {
         agent_id: submissionData.agentId,
       });
       notify('Agent submitted to game successfully!', 'success');
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Submission failed');
     }
@@ -267,14 +324,15 @@ export default function App() {
 
   const handleStartGame = async (gameId) => {
     try {
-      const res = await axios.get(`${API_BASE}/api/games/${gameId}/start`);
+      const res = await axios.get(`${API_BASE}/api/games/${gameId}/start/`);
       notify(`Game Execution Triggered! Task ID: ${res.data.task_id}`, 'success');
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to start game');
     }
   };
 
-  // --- UPDATE (PUT / PATCH) WITH MULTIPART CODE_FILE SUPPORT ---
+  // --- UPDATE (PUT / PATCH) ACTIONS ---
   const handleUpdateEnv = async (isPatch = false) => {
     if (!foundEnv) return;
 
@@ -288,12 +346,13 @@ export default function App() {
       const method = isPatch ? 'patch' : 'put';
       await axios({
         method,
-        url: `${API_BASE}/api/envs/${foundEnv.id}`,
+        url: `${API_BASE}/api/envs/${foundEnv.id}/`,
         data: formData,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       notify(`Environment #${foundEnv.id} updated via ${method.toUpperCase()}!`, 'success');
-      fetchEnv();
+      fetchEnv(null, foundEnv.id);
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to update environment');
     }
@@ -311,12 +370,13 @@ export default function App() {
       const method = isPatch ? 'patch' : 'put';
       await axios({
         method,
-        url: `${API_BASE}/api/agents/${foundAgent.id}`,
+        url: `${API_BASE}/api/agents/${foundAgent.id}/`,
         data: formData,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       notify(`Agent #${foundAgent.id} updated via ${method.toUpperCase()}!`, 'success');
-      fetchAgent();
+      fetchAgent(null, foundAgent.id);
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to update agent');
     }
@@ -326,9 +386,10 @@ export default function App() {
     if (!foundGame) return;
     const method = isPatch ? 'patch' : 'put';
     try {
-      await axios[method](`${API_BASE}/api/games/${foundGame.id}`, editGameData);
+      await axios[method](`${API_BASE}/api/games/${foundGame.id}/`, editGameData);
       notify(`Game #${foundGame.id} updated via ${method.toUpperCase()}!`, 'success');
-      fetchGame();
+      fetchGame(null, foundGame.id);
+      fetchAllLists();
     } catch (err) {
       handleApiError(err, 'Failed to update game');
     }
@@ -343,7 +404,6 @@ export default function App() {
             {authForm.isSignup ? 'Create Account' : 'Agent Battles Login'}
           </h2>
 
-          {/* Auth Local Error Notification */}
           {authError && (
             <div style={styles.authErrorBox}>
               <AlertCircle size={16} />
@@ -361,7 +421,7 @@ export default function App() {
                 style={styles.input}
                 required
               />
-              <span style={styles.helpText}>Enter your registered username or pick a unique handle for sign up.</span>
+              <span style={styles.helpText}>Enter your registered username or pick a unique handle.</span>
             </div>
 
             <div>
@@ -373,7 +433,7 @@ export default function App() {
                 style={styles.input}
                 required
               />
-              <span style={styles.helpText}>Must be at least 8 characters long for secure authentication.</span>
+              <span style={styles.helpText}>Must be at least 8 characters long.</span>
             </div>
 
             <button type="submit" style={styles.btnPrimary}>
@@ -397,7 +457,7 @@ export default function App() {
 
   return (
     <div style={styles.appWrapper}>
-      {/* Top Header */}
+      {/* Header */}
       <header style={styles.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Trophy size={24} color="#6366f1" />
@@ -425,23 +485,140 @@ export default function App() {
 
       {/* Navigation Tabs */}
       <nav style={styles.nav}>
-        {['games', 'environments', 'agents'].map((tab) => (
+        {[
+          { key: 'lists', label: 'ALL LISTS (DIRECTORY)', icon: <List size={16} /> },
+          { key: 'games', label: 'GAMES', icon: <Trophy size={16} /> },
+          { key: 'environments', label: 'ENVIRONMENTS', icon: <Shield size={16} /> },
+          { key: 'agents', label: 'AGENTS', icon: <Bot size={16} /> },
+        ].map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
             style={{
               ...styles.tabBtn,
-              borderBottom: activeTab === tab ? '2px solid #6366f1' : 'none',
-              color: activeTab === tab ? '#6366f1' : '#64748b',
+              borderBottom: activeTab === tab.key ? '2px solid #6366f1' : 'none',
+              color: activeTab === tab.key ? '#6366f1' : '#64748b',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
             }}
           >
-            {tab.toUpperCase()}
+            {tab.icon} {tab.label}
           </button>
         ))}
       </nav>
 
       {/* Main Content Area */}
       <main style={styles.main}>
+        {/* ================= ALL LISTS (DIRECTORY) VIEW ================= */}
+        {activeTab === 'lists' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2><List size={20} /> Registered System Resources</h2>
+              <button onClick={fetchAllLists} disabled={isLoadingLists} style={styles.btnSecondary}>
+                <RefreshCw size={16} className={isLoadingLists ? 'spin' : ''} /> Refresh All
+              </button>
+            </div>
+
+            <div style={styles.tripleGrid}>
+              {/* ENVIRONMENTS LIST */}
+              <div style={styles.card}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Shield size={18} color="#6366f1" /> Environments ({envList.length})
+                </h3>
+                <div style={styles.scrollList}>
+                  {envList.length === 0 ? (
+                    <p style={styles.emptyText}>No environments registered.</p>
+                  ) : (
+                    envList.map((env) => (
+                      <div key={env.id} style={styles.listItem}>
+                        <div style={{ flex: 1, paddingRight: '8px' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>#{env.id} - {env.name}</strong>
+                          <div style={styles.subText}>Min Agents: {env.min_agents} | Max Agents: {env.max_agents}</div>
+                          <div style={styles.subText}>Creator ID: #{env.creator ?? 'N/A'}</div>
+                          {env.code_file && (
+                            <div style={styles.subText}>
+                              <button
+                                onClick={() => handleDownloadFile(env.code_file, `${env.name}_env.py`)}
+                                style={styles.btnLink}
+                              >
+                                <Download size={12} /> Download Code File
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={() => fetchEnv(null, env.id)} style={styles.btnSmall}>Inspect</button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* AGENTS LIST */}
+              <div style={styles.card}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bot size={18} color="#10b981" /> Agents ({agentList.length})
+                </h3>
+                <div style={styles.scrollList}>
+                  {agentList.length === 0 ? (
+                    <p style={styles.emptyText}>No agents uploaded.</p>
+                  ) : (
+                    agentList.map((agent) => (
+                      <div key={agent.id} style={styles.listItem}>
+                        <div style={{ flex: 1, paddingRight: '8px' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>#{agent.id} - {agent.name}</strong>
+                          <div style={styles.subText}>Target Env ID: #{agent.env}</div>
+                          <div style={styles.subText}>Creator ID: #{agent.creator ?? 'N/A'}</div>
+                          {agent.code_file && (
+                            <div style={styles.subText}>
+                              <button
+                                onClick={() => handleDownloadFile(agent.code_file, `${agent.name}_agent.py`)}
+                                style={styles.btnLink}
+                              >
+                                <Download size={12} /> Download Code File
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={() => fetchAgent(null, agent.id)} style={styles.btnSmall}>Inspect</button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* GAMES LIST */}
+              <div style={styles.card}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Trophy size={18} color="#f59e0b" /> Games ({gameList.length})
+                </h3>
+                <div style={styles.scrollList}>
+                  {gameList.length === 0 ? (
+                    <p style={styles.emptyText}>No game rooms created.</p>
+                  ) : (
+                    gameList.map((game) => (
+                      <div key={game.id} style={styles.listItem}>
+                        <div style={{ flex: 1, paddingRight: '8px' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>#{game.id} - {game.name}</strong>
+                          <div style={styles.subText}>Target Env ID: #{game.env}</div>
+                          <div style={styles.subText}>Creator ID: #{game.creator ?? 'N/A'}</div>
+                          <div style={styles.subText}>
+                            Status: <span style={styles.statusBadge}>{formatGameStatus(game.status)}</span>
+                          </div>
+                          <div style={styles.subText}>
+                            Agents: {game.agents?.length ? game.agents.join(', ') : 'None'}
+                          </div>
+                        </div>
+                        <button onClick={() => fetchGame(null, game.id)} style={styles.btnSmall}>Inspect</button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ================= GAMES VIEW ================= */}
         {activeTab === 'games' && (
           <div style={styles.grid}>
@@ -470,12 +647,10 @@ export default function App() {
                   <p><strong>ID:</strong> {foundGame.id}</p>
                   <p><strong>Name:</strong> {foundGame.name}</p>
                   <p><strong>Env ID:</strong> {foundGame.env}</p>
-
                   <p>
                     <strong>Status:</strong>{' '}
                     <span style={styles.statusBadge}>{formatGameStatus(foundGame.status)}</span>
                   </p>
-
                   <p><strong>Creator ID:</strong> {foundGame.creator}</p>
                   <p><strong>Enrolled Agents:</strong> {foundGame.agents?.length ? foundGame.agents.join(', ') : 'None'}</p>
 
@@ -624,7 +799,7 @@ export default function App() {
                     />
                     <button type="submit" style={styles.btnPrimary}>Fetch</button>
                   </div>
-                  <span style={styles.helpText}>Enter an Environment ID to view properties and source code.</span>
+                  <span style={styles.helpText}>Enter the numerical ID of the environment.</span>
                 </div>
               </form>
 
@@ -632,46 +807,32 @@ export default function App() {
                 <div style={styles.detailsBox}>
                   <p><strong>ID:</strong> {foundEnv.id}</p>
                   <p><strong>Name:</strong> {foundEnv.name}</p>
-                  <p><strong>Min Agents:</strong> {foundEnv.min_agents}</p>
-                  <p><strong>Max Agents:</strong> {foundEnv.max_agents}</p>
+                  <p><strong>Min / Max Agents:</strong> {foundEnv.min_agents} / {foundEnv.max_agents}</p>
                   <p><strong>Creator ID:</strong> {foundEnv.creator}</p>
-                  <p><strong>Code File:</strong> <a href={foundEnv.code_file} target="_blank" rel="noreferrer">Download Code</a></p>
-
-                  {/* Code Viewer Toggle */}
-                  <div style={{ margin: '12px 0' }}>
-                    <button
-                      onClick={() => {
-                        if (!showEnvCode && !envCode) {
-                          fetchCode(foundEnv.code_file, setEnvCode);
-                        }
-                        setShowEnvCode(!showEnvCode);
-                      }}
-                      style={styles.btnCodeViewer}
-                    >
-                      {showEnvCode ? <EyeOff size={16} /> : <Code size={16} />}
-                      {showEnvCode ? 'Hide Source Code' : 'View Source Code'}
-                    </button>
-
-                    {showEnvCode && (
-                      <pre style={styles.codeBlock}>
-                        <code>{envCode || 'Loading code contents...'}</code>
-                      </pre>
-                    )}
-                  </div>
+                  {foundEnv.code_file && (
+                    <p>
+                      <strong>Source File:</strong>{' '}
+                      <button
+                        onClick={() => handleDownloadFile(foundEnv.code_file, `${foundEnv.name}_env.py`)}
+                        style={styles.btnLink}
+                      >
+                        <Download size={14} /> Download Script
+                      </button>
+                    </p>
+                  )}
 
                   <hr style={{ margin: '12px 0', border: '0.5px solid #e2e8f0' }} />
                   <h4><Edit3 size={16} /> Edit Environment (PUT / PATCH)</h4>
-
                   <div style={styles.form}>
                     <div>
                       <input
                         type="text"
                         value={editEnvData.name}
                         onChange={(e) => setEditEnvData({ ...editEnvData, name: e.target.value })}
-                        placeholder="Env Name"
+                        placeholder="Name"
                         style={styles.input}
                       />
-                      <span style={styles.helpText}>Updated title for this environment.</span>
+                      <span style={styles.helpText}>Update environment title.</span>
                     </div>
 
                     <div style={styles.row}>
@@ -683,7 +844,7 @@ export default function App() {
                           placeholder="Min Agents"
                           style={styles.input}
                         />
-                        <span style={styles.helpText}>Minimum player limit.</span>
+                        <span style={styles.helpText}>Min agents allowed.</span>
                       </div>
                       <div style={{ flex: 1 }}>
                         <input
@@ -693,23 +854,17 @@ export default function App() {
                           placeholder="Max Agents"
                           style={styles.input}
                         />
-                        <span style={styles.helpText}>Maximum player limit.</span>
+                        <span style={styles.helpText}>Max agents allowed.</span>
                       </div>
                     </div>
 
                     <div>
-                      <label style={styles.fileLabel}>
-                        <Upload size={16} /> Replace Python Script (.py) [Optional]
-                        <input
-                          type="file"
-                          accept=".py"
-                          onChange={(e) => setEditEnvData({ ...editEnvData, file: e.target.files[0] })}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                      <span style={styles.helpText}>
-                        {editEnvData.file ? `Selected: ${editEnvData.file.name}` : 'Leave empty if you do not want to replace the existing code file.'}
-                      </span>
+                      <input
+                        type="file"
+                        onChange={(e) => setEditEnvData({ ...editEnvData, file: e.target.files[0] })}
+                        style={styles.input}
+                      />
+                      <span style={styles.helpText}>Optionally replace Python environment code script.</span>
                     </div>
 
                     <div style={styles.row}>
@@ -721,9 +876,9 @@ export default function App() {
               )}
             </div>
 
-            {/* Create Environment */}
+            {/* Upload Environment */}
             <div style={styles.card}>
-              <h3><Shield size={18} /> Register New Environment</h3>
+              <h3><Upload size={18} /> Upload Environment</h3>
               <form onSubmit={handleUploadEnv} style={styles.form}>
                 <div>
                   <input
@@ -734,10 +889,10 @@ export default function App() {
                     style={styles.input}
                     required
                   />
-                  <span style={styles.helpText}>Unique identifier title for the simulation domain.</span>
+                  <span style={styles.helpText}>Descriptive title (e.g. Chess Engine, GridWorld v2).</span>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={styles.row}>
                   <div style={{ flex: 1 }}>
                     <input
                       type="number"
@@ -747,7 +902,7 @@ export default function App() {
                       style={styles.input}
                       required
                     />
-                    <span style={styles.helpText}>Min required agents.</span>
+                    <span style={styles.helpText}>Minimum required players.</span>
                   </div>
                   <div style={{ flex: 1 }}>
                     <input
@@ -758,27 +913,21 @@ export default function App() {
                       style={styles.input}
                       required
                     />
-                    <span style={styles.helpText}>Max allowed agents.</span>
+                    <span style={styles.helpText}>Maximum capacity.</span>
                   </div>
                 </div>
 
                 <div>
-                  <label style={styles.fileLabel}>
-                    <Upload size={16} /> Select Environment File (.py)
-                    <input
-                      type="file"
-                      accept=".py"
-                      onChange={(e) => setEnvData({ ...envData, file: e.target.files[0] })}
-                      style={{ display: 'none' }}
-                      required
-                    />
-                  </label>
-                  <span style={styles.helpText}>
-                    {envData.file ? `Selected: ${envData.file.name}` : 'Must be a valid Python (.py) simulation file.'}
-                  </span>
+                  <input
+                    type="file"
+                    onChange={(e) => setEnvData({ ...envData, file: e.target.files[0] })}
+                    style={styles.input}
+                    required
+                  />
+                  <span style={styles.helpText}>Python file containing environment class definition.</span>
                 </div>
 
-                <button type="submit" style={styles.btnPrimary}>Upload Env</button>
+                <button type="submit" style={styles.btnPrimary}>Upload Environment</button>
               </form>
             </div>
           </div>
@@ -803,7 +952,7 @@ export default function App() {
                     />
                     <button type="submit" style={styles.btnPrimary}>Fetch</button>
                   </div>
-                  <span style={styles.helpText}>Enter an Agent ID to view configuration and source code.</span>
+                  <span style={styles.helpText}>Enter numerical ID of the agent script.</span>
                 </div>
               </form>
 
@@ -811,35 +960,22 @@ export default function App() {
                 <div style={styles.detailsBox}>
                   <p><strong>ID:</strong> {foundAgent.id}</p>
                   <p><strong>Name:</strong> {foundAgent.name}</p>
-                  <p><strong>Target Env ID:</strong> {foundAgent.env}</p>
+                  <p><strong>Env ID:</strong> {foundAgent.env}</p>
                   <p><strong>Creator ID:</strong> {foundAgent.creator}</p>
-                  <p><strong>Code File:</strong> <a href={foundAgent.code_file} target="_blank" rel="noreferrer">Download Code</a></p>
-
-                  {/* Code Viewer Toggle */}
-                  <div style={{ margin: '12px 0' }}>
-                    <button
-                      onClick={() => {
-                        if (!showAgentCode && !agentCode) {
-                          fetchCode(foundAgent.code_file, setAgentCode);
-                        }
-                        setShowAgentCode(!showAgentCode);
-                      }}
-                      style={styles.btnCodeViewer}
-                    >
-                      {showAgentCode ? <EyeOff size={16} /> : <Code size={16} />}
-                      {showAgentCode ? 'Hide Source Code' : 'View Source Code'}
-                    </button>
-
-                    {showAgentCode && (
-                      <pre style={styles.codeBlock}>
-                        <code>{agentCode || 'Loading code contents...'}</code>
-                      </pre>
-                    )}
-                  </div>
+                  {foundAgent.code_file && (
+                    <p>
+                      <strong>Source File:</strong>{' '}
+                      <button
+                        onClick={() => handleDownloadFile(foundAgent.code_file, `${foundAgent.name}_agent.py`)}
+                        style={styles.btnLink}
+                      >
+                        <Download size={14} /> Download Script
+                      </button>
+                    </p>
+                  )}
 
                   <hr style={{ margin: '12px 0', border: '0.5px solid #e2e8f0' }} />
                   <h4><Edit3 size={16} /> Edit Agent (PUT / PATCH)</h4>
-
                   <div style={styles.form}>
                     <div>
                       <input
@@ -849,7 +985,7 @@ export default function App() {
                         placeholder="Agent Name"
                         style={styles.input}
                       />
-                      <span style={styles.helpText}>Updated name for this AI agent.</span>
+                      <span style={styles.helpText}>Update agent display title.</span>
                     </div>
 
                     <div>
@@ -860,22 +996,16 @@ export default function App() {
                         placeholder="Target Env ID"
                         style={styles.input}
                       />
-                      <span style={styles.helpText}>Environment ID compatible with this agent strategy.</span>
+                      <span style={styles.helpText}>Compatible Environment ID.</span>
                     </div>
 
                     <div>
-                      <label style={styles.fileLabel}>
-                        <Upload size={16} /> Replace Python Script (.py) [Optional]
-                        <input
-                          type="file"
-                          accept=".py"
-                          onChange={(e) => setEditAgentData({ ...editAgentData, file: e.target.files[0] })}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                      <span style={styles.helpText}>
-                        {editAgentData.file ? `Selected: ${editAgentData.file.name}` : 'Leave empty if you do not want to replace the current script.'}
-                      </span>
+                      <input
+                        type="file"
+                        onChange={(e) => setEditAgentData({ ...editAgentData, file: e.target.files[0] })}
+                        style={styles.input}
+                      />
+                      <span style={styles.helpText}>Replace Python agent code executable.</span>
                     </div>
 
                     <div style={styles.row}>
@@ -889,7 +1019,7 @@ export default function App() {
 
             {/* Upload Agent */}
             <div style={styles.card}>
-              <h3><Bot size={18} /> Upload Agent</h3>
+              <h3><Upload size={18} /> Upload Agent</h3>
               <form onSubmit={handleUploadAgent} style={styles.form}>
                 <div>
                   <input
@@ -900,35 +1030,29 @@ export default function App() {
                     style={styles.input}
                     required
                   />
-                  <span style={styles.helpText}>Give your bot or agent strategy a recognizable name.</span>
+                  <span style={styles.helpText}>Descriptive title for your RL/heuristic model.</span>
                 </div>
 
                 <div>
                   <input
                     type="number"
-                    placeholder="Target Environment ID"
+                    placeholder="Target Env ID"
                     value={agentData.env}
                     onChange={(e) => setAgentData({ ...agentData, env: e.target.value })}
                     style={styles.input}
                     required
                   />
-                  <span style={styles.helpText}>Target Environment ID where this agent will compete.</span>
+                  <span style={styles.helpText}>Target environment where this agent is valid to execute.</span>
                 </div>
 
                 <div>
-                  <label style={styles.fileLabel}>
-                    <Upload size={16} /> Select Agent File (.py)
-                    <input
-                      type="file"
-                      accept=".py"
-                      onChange={(e) => setAgentData({ ...agentData, file: e.target.files[0] })}
-                      style={{ display: 'none' }}
-                      required
-                    />
-                  </label>
-                  <span style={styles.helpText}>
-                    {agentData.file ? `Selected: ${agentData.file.name}` : 'Must be a valid Python (.py) agent file.'}
-                  </span>
+                  <input
+                    type="file"
+                    onChange={(e) => setAgentData({ ...agentData, file: e.target.files[0] })}
+                    style={styles.input}
+                    required
+                  />
+                  <span style={styles.helpText}>Python file implementing the agent interaction logic.</span>
                 </div>
 
                 <button type="submit" style={styles.btnPrimary}>Upload Agent</button>
@@ -941,28 +1065,203 @@ export default function App() {
   );
 }
 
-// Layout Styles
+// 4. Embedded Inline Styles
 const styles = {
-  authContainer: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' },
-  appWrapper: { maxWidth: '1000px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif', padding: '16px' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' },
-  nav: { display: 'flex', gap: '16px', margin: '20px 0', borderBottom: '1px solid #e2e8f0' },
-  tabBtn: { background: 'none', border: 'none', padding: '8px 16px', cursor: 'pointer', fontWeight: '600' },
-  main: { marginTop: '16px' },
-  grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' },
-  card: { background: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
-  form: { display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' },
-  row: { display: 'flex', gap: '8px' },
-  input: { padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', width: '100%', boxSizing: 'border-box' },
-  helpText: { display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '4px' },
-  fileLabel: { border: '1px dashed #cbd5e1', padding: '12px', borderRadius: '6px', textAlign: 'center', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#475569' },
-  btnPrimary: { backgroundColor: '#6366f1', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' },
-  btnSecondary: { backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' },
-  btnCodeViewer: { display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#334155', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '500' },
-  toggleAuth: { marginTop: '12px', textAlign: 'center', color: '#6366f1', cursor: 'pointer', fontSize: '0.875rem' },
-  alert: { padding: '12px', borderRadius: '6px', marginBottom: '16px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid' },
-  authErrorBox: { padding: '10px', backgroundColor: '#fef2f2', color: '#991b1b', borderRadius: '6px', border: '1px solid #fca5a5', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' },
-  detailsBox: { marginTop: '16px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.9rem' },
-  statusBadge: { backgroundColor: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: '12px', fontWeight: '600', fontSize: '0.8rem' },
-  codeBlock: { backgroundColor: '#0f172a', color: '#38bdf8', padding: '12px', borderRadius: '6px', overflowX: 'auto', fontSize: '0.8rem', marginTop: '8px', maxHeight: '250px' }
+  appWrapper: {
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    backgroundColor: '#f8fafc',
+    minHeight: '100vh',
+    color: '#0f172a',
+  },
+  header: {
+    backgroundColor: '#ffffff',
+    borderBottom: '1px solid #e2e8f0',
+    padding: '16px 32px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  nav: {
+    backgroundColor: '#ffffff',
+    borderBottom: '1px solid #e2e8f0',
+    padding: '0 32px',
+    display: 'flex',
+    gap: '24px',
+  },
+  tabBtn: {
+    background: 'none',
+    border: 'none',
+    padding: '16px 0',
+    fontWeight: '600',
+    fontSize: '0.875rem',
+    cursor: 'pointer',
+  },
+  main: {
+    padding: '32px',
+    maxWidth: '1280px',
+    margin: '0 auto',
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+    gap: '24px',
+  },
+  tripleGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+    gap: '24px',
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0',
+    padding: '24px',
+    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+    marginTop: '16px',
+  },
+  row: {
+    display: 'flex',
+    gap: '12px',
+  },
+  input: {
+    width: '100%',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #cbd5e1',
+    fontSize: '0.875rem',
+    boxSizing: 'border-box',
+  },
+  helpText: {
+    fontSize: '0.75rem',
+    color: '#64748b',
+    marginTop: '4px',
+    display: 'block',
+  },
+  btnPrimary: {
+    backgroundColor: '#6366f1',
+    color: '#ffffff',
+    border: 'none',
+    padding: '10px 16px',
+    borderRadius: '6px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    width: '100%',
+  },
+  btnSecondary: {
+    backgroundColor: '#ffffff',
+    color: '#334155',
+    border: '1px solid #cbd5e1',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  btnSmall: {
+    backgroundColor: '#f1f5f9',
+    color: '#334155',
+    border: '1px solid #cbd5e1',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontWeight: '500',
+  },
+  btnLink: {
+    background: 'none',
+    border: 'none',
+    color: '#6366f1',
+    cursor: 'pointer',
+    padding: 0,
+    fontSize: '0.875rem',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    fontWeight: '500',
+  },
+  detailsBox: {
+    marginTop: '16px',
+    padding: '16px',
+    backgroundColor: '#f8fafc',
+    borderRadius: '6px',
+    border: '1px solid #e2e8f0',
+  },
+  alert: {
+    padding: '12px 16px',
+    borderRadius: '6px',
+    border: '1px solid',
+    marginBottom: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '0.875rem',
+  },
+  authContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '100vh',
+    backgroundColor: '#f1f5f9',
+  },
+  authErrorBox: {
+    backgroundColor: '#fef2f2',
+    color: '#991b1b',
+    padding: '10px 12px',
+    borderRadius: '6px',
+    fontSize: '0.85rem',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px',
+  },
+  toggleAuth: {
+    marginTop: '16px',
+    textAlign: 'center',
+    color: '#6366f1',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+  },
+  scrollList: {
+    maxHeight: '400px',
+    overflowY: 'auto',
+    marginTop: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  listItem: {
+    padding: '10px',
+    border: '1px solid #e2e8f0',
+    borderRadius: '6px',
+    backgroundColor: '#f8fafc',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  subText: {
+    fontSize: '0.75rem',
+    color: '#64748b',
+    marginTop: '2px',
+  },
+  statusBadge: {
+    display: 'inline-block',
+    padding: '2px 6px',
+    backgroundColor: '#e0e7ff',
+    color: '#3730a3',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+    fontWeight: '600',
+  },
+  emptyText: {
+    color: '#94a3b8',
+    fontSize: '0.875rem',
+    fontStyle: 'italic',
+  },
 };
