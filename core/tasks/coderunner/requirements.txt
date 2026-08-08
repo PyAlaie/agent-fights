@@ -1,1 +1,2 @@
 pyseccomp
+numpy

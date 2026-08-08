@@ -53,6 +53,9 @@ class CodeRunner:
         
         self.turns = {} # stored as turn -> agent_id 
         self.timestamp = 0
+        self.timestamp_limit = 200 # TODO: Read from settings
+
+        self.game_on = False
 
         self.raw_payload = self._get_code_files_raw()
 
@@ -86,6 +89,7 @@ class CodeRunner:
         5. Creates wrapper process in self.agent_wrapper_processes as (agent_id -> wrapper_process)
         6. Assigns a turn number for each agent (starting from 0)
         7. Writes all into self.agents as (agent_id -> agentInfo). 
+        8. Sets the game_on to be True
         """
 
         logger.info("Setup game ...")
@@ -124,6 +128,8 @@ class CodeRunner:
             self.agents[agent_id] = agent_info
             turn += 1
 
+        self.game_on = True
+
         logger.info("Game setup finished!")
 
     
@@ -144,6 +150,10 @@ class CodeRunner:
     def _increase_timestamp(self):
         self.timestamp += 1
 
+
+    def timestamp_limit_reached(self):
+        return self.timestamp >= self.timestamp_limit
+
     
     def _finish_game(self):
         """ 
@@ -153,12 +163,15 @@ class CodeRunner:
         logger.info("Finishing game...")
         # TODO: Announce the winner
         
+        self.game_on = False
+
         # Kill env
         self.env_wrapper_process.kill()
 
         # Kill agents
         for agent, agent_info in self.agents.items():
             agent_info.wrapper_process.kill()
+
 
 
     def _make_event_message(self, event_type, timestamp, event_data):
@@ -251,7 +264,7 @@ class CodeRunner:
                 pipe.flush()
 
             # The game loop
-            while True:
+            while self.game_on:
                 # Get observation from env (containing turn)
                 env_data = self.env_connection.recv()
                 env_data_parsed = json.loads(env_data)
@@ -288,6 +301,9 @@ class CodeRunner:
                 self.env_connection.send(action)
 
                 self._increase_timestamp()
+
+                if self.timestamp_limit_reached():
+                    self._finish_game()
 
         # Opening the pipe file to send the final results one last time  
         with open(self.PIPE_PATH, 'w') as pipe:

@@ -97,9 +97,8 @@ class Wrapper(BaseWrapper):
             
             try:
                 action = self.agent_namespace.get("main")(observation)
-                action_json = json.dumps(action)
 
-                self.connection.send(action_json)
+                self.connection.send(action)
      
             except MemoryError as e:
                 logger.error(f"Memory limit exceeded: {e}")

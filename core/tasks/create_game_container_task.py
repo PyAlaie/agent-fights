@@ -61,7 +61,6 @@ def create_game_container_task(game_id):
 
                 raw_event = raw_event.strip()
                 game_event = json.loads(raw_event)
-                logging.info(game_event)
                 events.append(game_event)
         
         events_json = json.dumps(events)
