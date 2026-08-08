@@ -22,11 +22,17 @@ class EnvView(APIView):
             env = serializer.save()
             return Response(data={'id': env.id}, status=HTTP_201_CREATED)
 
-    def get(self, request, id):
-        env = Env.objects.get(id=id)
-        serializer = EnvSerializer(instance=env)
+    def get(self, request, id=None):
+        if id:
+            env = Env.objects.get(id=id)
+            serializer = EnvSerializer(instance=env)
 
-        return Response(data=serializer.data, status=HTTP_200_OK)
+            return Response(data=serializer.data, status=HTTP_200_OK)
+        else:
+            envs = Env.objects.all()
+            serializer = EnvSerializer(instance=envs, many=True)
+
+            return Response(data=serializer.data, status=HTTP_200_OK)
 
     def put(self, request, id):
             env = Env.objects.get(id=id)
@@ -54,11 +60,17 @@ class AgentView(APIView):
             agent = serializer.save()
             return Response(data={'id': agent.id}, status=HTTP_201_CREATED)
 
-    def get(self, request, id):
-        agent = Agent.objects.get(id=id)
-        serializer = AgentSerializer(instance=agent)
+    def get(self, request, id=None):
+        if id:
+            agent = Agent.objects.get(id=id)
+            serializer = AgentSerializer(instance=agent)
 
-        return Response(data=serializer.data, status=HTTP_200_OK)
+            return Response(data=serializer.data, status=HTTP_200_OK)
+        else:
+            agents = Agent.objects.all()
+            serializer = AgentSerializer(instance=agents, many=True)
+
+            return Response(data=serializer.data, status=HTTP_200_OK)
 
     def put(self, request, id):
             agent = Agent.objects.get(id=id)
@@ -86,11 +98,17 @@ class GameView(APIView):
             game = serializer.save()
             return Response(data={'id': game.id}, status=HTTP_201_CREATED)
 
-    def get(self, request, id):
-        game = Game.objects.get(id=id)
-        serializer = GameSerializer(instance=game)
-
-        return Response(data=serializer.data, status=HTTP_200_OK)
+    def get(self, request, id=None):
+            if id:
+                game = Game.objects.get(id=id)
+                serializer = GameSerializer(instance=game)
+    
+                return Response(data=serializer.data, status=HTTP_200_OK)
+            else:
+                games = Game.objects.all()
+                serializer = GameSerializer(instance=games, many=True)
+    
+                return Response(data=serializer.data, status=HTTP_200_OK)
 
     def put(self, request, id):
             game = Game.objects.get(id=id)
