@@ -1,88 +1,71 @@
 from rest_framework import serializers
 from .models import Env, Agent, Game, GameResult
+from rest_framework.serializers import ValidationError
 
 class EnvSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = Env
-        fields = ['id', 'created_at', 'updated_at', 
-                  'name', 'code_file', 'min_agents', 'max_agents', 
-                  'creator', 'agents', 'games']
+        fields = '__all__'
         read_only_fields = ['id', 'created_at', 'updated_at', 'creator']
 
     def create(self, validated_data):
-        validated_data['creator'] = self.context['request'].user
-        return super().create(validated_data)
-    
-class EnvGamesListSerializer(serializers.ModelSerializer):
-    status = serializers.CharField(source='get_status_display')
-    creator = serializers.CharField(source='creator.username')
-    winner = serializers.CharField(source='winner.username')
-
-    class Meta:
-        model = Game
-        fields = ['id', 'created_at', 'updated_at', 'name', 
-                  'status', 'creator', 'winner'] 
+        self.validated_data['creator'] = self.context['request'].user
+        return Env.objects.create(**self.validated_data)
 
 class AgentSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = Agent
-        fields = ['id', 'name', 'env', 
-                  'code_file', 'creator', 'games']
-        read_only_fields = ['id', 'creator']
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'creator']
 
     def create(self, validated_data):
-        validated_data['creator'] = self.context['request'].user
-        return super().create(validated_data)
-    
-
-class GameResultSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GameResult
-        fields = ['id', 'events']
-        # read_only_fields = ['id', 'status', 'creator']
+            self.validated_data['creator'] = self.context['request'].user
+            return Agent.objects.create(**self.validated_data)
 
 class GameSerializer(serializers.ModelSerializer):
-    gameresult = GameResultSerializer(read_only=True)
+
     class Meta:
         model = Game
-        result = GameResultSerializer(read_only=True)
-        fields = "__all__"
-        # fields = ['id', 'name', 'env', 'agents', 'status', 'creator', 'gameresult']
-        # read_only_fields = ['id', 'status', 'creator']
-
-    def validate(self, attrs):
-        if self.instance:
-            self.instance.clean()
-        return super().validate(attrs)
+        fields = '__all__'
+        read_only_fields = ['id', 'created_at', 'updated_at', 'creator', 'status', 'agents']
 
     def create(self, validated_data):
-        validated_data['creator'] = self.context['request'].user
-        return super().create(validated_data)    
+            self.validated_data['creator'] = self.context['request'].user
+            return Game.objects.create(**self.validated_data)
     
-class GameAgentsListSerializer(serializers.ModelSerializer):
-    env = serializers.CharField(source='env.name')
-    creator = serializers.CharField(source='creator.username')
+class AgentSubmissionSerializer(serializers.Serializer):
+    agent_id = serializers.PrimaryKeyRelatedField(queryset=Agent.objects.all())
 
-    class Meta:
-        model = Agent
-        fields = ['id', 'name', 'env', 'creator']
+    def validate(self, attrs):
+        agent = attrs['agent_id']
 
-class UserEnvsListSerializer(serializers.ModelSerializer):
-    
-    class Meta:
-        model = Env
-        fields = ['id', 'name', 'code_file', 
-                  'min_agents', 'max_agents']
-        
-class UserAgentsListSerializer(serializers.ModelSerializer):
+        if self.instance.status != '0':
+            raise ValidationError("Can't Submit Agent to a Game That has been Already Started.")
 
-    class Meta:
-        model = Env
-        fields = ['id', 'name' , 'code_file']
+        elif self.instance.agents.contains(agent):
+            raise ValidationError('The Agents is Already Submitted for this Game.')
 
-class UserGamesListSerializer(serializers.ModelSerializer):
-    # winner = serializers.CharField(source='winner.username')
+        else:
+            max_agents = self.instance.env.max_agents
+            if self.instance.agents.count() == max_agents:
+                raise ValidationError('The Game has Reached its Maximum Agent Count.')
 
-    class Meta:
-        model = Game
-        fields = ['id', 'name', 'status']
+        if self.instance.env != agent.env:
+            raise ValidationError('The Agent is Not Compatible With the Env of the Game.')
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        self.instance.agents.add(validated_data['agent_id'])
+        self.instance.save()
+        return self.instance
+
+class StartGameSerializer(serializers.Serializer):
+
+    def validate(self, attrs):
+        # if self.instance.status != '0':
+        #     raise ValidationError('The Game has Already Been Started Once!')
+         
+        return attrs

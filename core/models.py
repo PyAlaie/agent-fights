@@ -81,7 +81,7 @@ class Game(Base):
     
     def __str__(self):
         return f"{self.name} - {self.env.name}"
-    
+
 
 class GameResult(Base):
     game = models.OneToOneField(to=Game, on_delete=models.CASCADE, null=False)

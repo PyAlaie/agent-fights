@@ -1,4 +1,5 @@
 from rest_framework.permissions import BasePermission
+from rest_framework.exceptions import PermissionDenied
 
 class IsCreatorOrAdmin(BasePermission):
     def has_object_permission(self, request, view, obj):
