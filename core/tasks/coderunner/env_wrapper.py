@@ -65,10 +65,8 @@ class EnvWrapper(BaseWrapper):
 
         while True:
             action = self.connection.recv()
-            logger.info(action)
             environment.step(action)
             env_data = environment.get_env_data()
-            logger.info(env_data)
             self.connection.send(env_data)
 
     @staticmethod

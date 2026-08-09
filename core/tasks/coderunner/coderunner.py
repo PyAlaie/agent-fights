@@ -155,13 +155,17 @@ class CodeRunner:
         return self.timestamp >= self.timestamp_limit
 
     
-    def _finish_game(self):
+    def _finish_game(self, message:None=str):
         """ 
         1. Announces the winner of the game
         2. Kills the agents and env processes and finishs the game.
         """
+
         logger.info("Finishing game...")
-        # TODO: Announce the winner
+        if message:
+            logger.info(f"Finishing message: {message}")
+        
+        # TODO: get game result
         
         self.game_on = False
 
@@ -269,31 +273,30 @@ class CodeRunner:
                 env_data = self.env_connection.recv()
                 env_data_parsed = json.loads(env_data)
 
+                # Send the obs record
+                game_event = self._make_event_message("obs", self.timestamp, env_data)
+                write_into_pipe(game_event)
+
                 # Check observation validity (terminated, etc)
                 try:
                     self._check_env_data_validation(env_data_parsed)
                 except Exception as e:
                     logger.error(f"Error in data comming from env: {e}")
-                    self._finish_game()
+                    self._finish_game(message="Env data not valid!")
                     break
                 
                 turn = env_data_parsed.get("turn")
                 terminated = env_data_parsed.get("terminated")
                 if terminated:
-                    self._finish_game()
+                    self._finish_game(message="Game terminated gracefully!")
                     break
-                observation = env_data_parsed.get("observation")
                 
                 # Pass the obsevation to the agent with turn 
                 # and get the action from agent 
                 agent_id = self.turns[turn] 
                 action = self._get_agent_action(env_data, agent_id)
 
-                # Send the record
-                # 1. senf obs
-                game_event = self._make_event_message("obs", self.timestamp, env_data)
-                write_into_pipe(game_event)
-                # 2. senf action
+                # send action record
                 game_event = self._make_event_message("act", self.timestamp, {"agent_id": agent_id, "action": action})
                 write_into_pipe(game_event)
 
@@ -303,7 +306,8 @@ class CodeRunner:
                 self._increase_timestamp()
 
                 if self.timestamp_limit_reached():
-                    self._finish_game()
+                    self._finish_game(message="Max timestamp limit reached!")
+                    break
 
         # Opening the pipe file to send the final results one last time  
         with open(self.PIPE_PATH, 'w') as pipe:
