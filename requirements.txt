@@ -6,3 +6,4 @@ sqlparse==0.5.5
 djangorestframework ==3.16.1
 celery==5.3.6
 pyseccomp
+django-cors-headers==4.9.0
