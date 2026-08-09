@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def create_game_container_task(game_id):
     # Starting the game
     game = Game.objects.get(id=game_id)
-    game.status = Game.StatusChoices.started
+    game.status = Game.Status.STARTED
     game.save()
     
     try:
@@ -72,10 +72,10 @@ def create_game_container_task(game_id):
         game_result = GameResult(game=game, winner=temp_agent, events=events_json, container_log=container_logs)
         game_result.save()
 
-        game.status = Game.StatusChoices.finished
+        game.status = Game.Status.FINISHED
         game.save()
     
     except Exception as e:
         logger.error(f"Error: {e}")
-        game.status = Game.StatusChoices.failed
+        game.status = Game.Status.FAILED
         game.save()

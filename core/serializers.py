@@ -65,7 +65,7 @@ class AgentSubmissionSerializer(serializers.Serializer):
 class StartGameSerializer(serializers.Serializer):
 
     def validate(self, attrs):
-        if self.instance.status != '0':
-            raise ValidationError('The Game has Already Been Started Once!')
+        # if self.instance.status != '0':
+        #     raise ValidationError('The Game has Already Been Started Once!')
          
         return attrs
