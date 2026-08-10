@@ -22,7 +22,13 @@ class AbstractEnv:
         raise NotImplementedError("Method Not Implemented!")
 
     
-    def terminate(self, result, message : str = None):
+    def terminate(self, result=None, message : str = None):
+        """
+        Terminates the game, returning the result.
+        there is no general convention for how the result should be,
+        however it would better be a dictionary with a winner key.
+        """
+        
         self.terminated = True
         self.game_result = result
         self.termination_message = message
