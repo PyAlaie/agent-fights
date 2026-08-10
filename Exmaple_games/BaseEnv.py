@@ -4,6 +4,7 @@ class AbstractEnv:
     def __init__(self):
         self.terminated = False
         self.termination_message : str = None 
+        self.game_result = None
 
     def _get_observation(self):
         raise NotImplementedError("Method Not Implemented!")
@@ -20,12 +21,10 @@ class AbstractEnv:
     def step(self, action):
         raise NotImplementedError("Method Not Implemented!")
 
-    def _get_game_result(self):
-        raise NotImplementedError("Method Not Implemented!")
-
     
-    def terminate(self, message : str = None):
+    def terminate(self, result, message : str = None):
         self.terminated = True
+        self.game_result = result
         self.termination_message = message
     
     def get_env_data(self) -> str:
@@ -34,7 +33,7 @@ class AbstractEnv:
             "turn": self._get_turn(),
             "terminated": self._get_terminated(),
             "termination_message": self.termination_message,
-            "game_result": self._get_game_result()
+            "game_result": self.game_result
         }
 
         payload_json = json.dumps(payload)
