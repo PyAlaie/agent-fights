@@ -5,12 +5,12 @@ from rest_framework.status import *
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from core.tasks import create_game_container_task
-from .models import Env, Agent, Game
+from .models import Env, Agent, Game, GameResult
 
 from .permissions import IsCreatorOrAdmin
 from django.shortcuts import get_object_or_404
 
-from .serializers import EnvSerializer, AgentSerializer, GameSerializer, AgentSubmissionSerializer, StartGameSerializer
+from .serializers import EnvSerializer, AgentSerializer, GameSerializer, AgentSubmissionSerializer, StartGameSerializer, GameResultSerializer
 
 class EnvView(APIView):
     permission_classes = [IsAuthenticated]
@@ -164,3 +164,45 @@ class StartGameView(APIView):
                 },
                 status=HTTP_202_ACCEPTED
             )
+
+class GameResultView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        game = Game.objects.get(id=id)
+
+        if game.status == game.StatusChoice.created:
+            return Response(data={'error': 'The Game has not Been Started Yet.'}, status=HTTP_200_OK)
+
+        else:
+            game_result = GameResult.objects.get(game=game)
+            serializer = GameResultSerializer(instance=game_result)
+
+            return Response(data=serializer.data, status=HTTP_200_OK)
+
+class UserAgentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        agents = Agent.objects.filter(creator=request.user)
+        serializer = AgentSerializer(instance=agents, many=True)
+
+        return Response(data=serializer.data, status=HTTP_200_OK) 
+
+class UserEnvsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        envs = Env.objects.filter(creator=request.user)
+        serializer = EnvSerializer(instance=envs, many=True)
+
+        return Response(data=serializer.data, status=HTTP_200_OK) 
+
+class UserGamesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        games = Game.objects.filter(creator=request.user)
+        serializer = GameSerializer(instance=games, many=True)
+
+        return Response(data=serializer.data, status=HTTP_200_OK) 

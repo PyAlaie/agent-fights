@@ -41,7 +41,7 @@ class AgentSubmissionSerializer(serializers.Serializer):
     def validate(self, attrs):
         agent = attrs['agent_id']
 
-        if self.instance.status != '0':
+        if self.instance.status != self.instance.StatusChoice.created:
             raise ValidationError("Can't Submit Agent to a Game That has been Already Started.")
 
         elif self.instance.agents.contains(agent):
@@ -69,3 +69,10 @@ class StartGameSerializer(serializers.Serializer):
         #     raise ValidationError('The Game has Already Been Started Once!')
          
         return attrs
+
+class GameResultSerializer(serializers.Serializer):
+
+    class Meta:
+        model = GameResult
+        fields = "__all__"
+        read_only_fields = "__all__"
