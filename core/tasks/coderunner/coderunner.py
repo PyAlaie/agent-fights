@@ -56,6 +56,7 @@ class CodeRunner:
         self.timestamp_limit = 200 # TODO: Read from settings
 
         self.game_on = False
+        self.game_result = None
 
         self.raw_payload = self._get_code_files_raw()
 
@@ -137,6 +138,7 @@ class CodeRunner:
         """
         Checks the structure of env_data to be correct
         """
+
         turn = env_data.get("turn")
         terminated = env_data.get("terminated")
         observation = env_data.get("observation")
@@ -164,8 +166,6 @@ class CodeRunner:
         logger.info("Finishing game...")
         if message:
             logger.info(f"Finishing message: {message}")
-        
-        # TODO: get game result
         
         self.game_on = False
 
@@ -288,6 +288,7 @@ class CodeRunner:
                 turn = env_data_parsed.get("turn")
                 terminated = env_data_parsed.get("terminated")
                 if terminated:
+                    self.game_result = env_data_parsed.get("game_result")
                     self._finish_game(message="Game terminated gracefully!")
                     break
                 
@@ -308,11 +309,6 @@ class CodeRunner:
                 if self.timestamp_limit_reached():
                     self._finish_game(message="Max timestamp limit reached!")
                     break
-
-        # Opening the pipe file to send the final results one last time  
-        with open(self.PIPE_PATH, 'w') as pipe:
-            # TODO: do this part
-            pass
 
 
 if __name__ == "__main__":
