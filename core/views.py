@@ -171,7 +171,7 @@ class GameResultView(APIView):
     def get(self, request, id):
         game = Game.objects.get(id=id)
 
-        if game.status == game.StatusChoice.created:
+        if game.status == game.StatusChoices.created:
             return Response(data={'error': 'The Game has not Been Started Yet.'}, status=HTTP_200_OK)
 
         else:
