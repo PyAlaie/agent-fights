@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Play, Upload, Shield, Bot, Trophy, LogOut, PlusCircle, UserCheck, Search, Edit3, AlertCircle, List, RefreshCw, Download } from 'lucide-react';
+import { Play, Upload, Shield, Bot, Trophy, LogOut, PlusCircle, UserCheck, Search, Edit3, AlertCircle, List, RefreshCw, Download, User, Award } from 'lucide-react';
 
 // 1. Helper Function for CSRF Token Parsing
 function getCookie(name) {
@@ -51,17 +51,29 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('lists');
 
-  // Directory / List View States
+  // Directory / List View States (All Resources)
   const [envList, setEnvList] = useState([]);
   const [agentList, setAgentList] = useState([]);
   const [gameList, setGameList] = useState([]);
   const [isLoadingLists, setIsLoadingLists] = useState(false);
+
+  // User Profile States (My Resources)
+  const [myEnvList, setMyEnvList] = useState([]);
+  const [myAgentList, setMyAgentList] = useState([]);
+  const [myGameList, setMyGameList] = useState([]);
+  const [isLoadingMyLists, setIsLoadingMyLists] = useState(false);
 
   // Lookup IDs & Found Data States
   const [lookup, setLookup] = useState({ envId: '', agentId: '', gameId: '' });
   const [foundEnv, setFoundEnv] = useState(null);
   const [foundAgent, setFoundAgent] = useState(null);
   const [foundGame, setFoundGame] = useState(null);
+
+  // Game Results States
+  const [resultGameId, setResultGameId] = useState('');
+  const [gameResult, setGameResult] = useState(null);
+  const [resultError, setResultError] = useState('');
+  const [isLoadingResult, setIsLoadingResult] = useState(false);
 
   // Edit (PUT / PATCH) States
   const [editEnvData, setEditEnvData] = useState({ name: '', min_agents: 1, max_agents: 10, file: null });
@@ -197,9 +209,31 @@ export default function App() {
     }
   };
 
+  // --- FETCH USER PROFILE API CALLS ---
+  const fetchMyLists = async () => {
+    setIsLoadingMyLists(true);
+    try {
+      const [envRes, agentRes, gameRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/me/envs/`),
+        axios.get(`${API_BASE}/api/me/agents/`),
+        axios.get(`${API_BASE}/api/me/games/`),
+      ]);
+
+      setMyEnvList(Array.isArray(envRes.data) ? envRes.data : envRes.data.results || []);
+      setMyAgentList(Array.isArray(agentRes.data) ? agentRes.data : agentRes.data.results || []);
+      setMyGameList(Array.isArray(gameRes.data) ? gameRes.data : gameRes.data.results || []);
+      notify('User profile refreshed successfully.', 'info');
+    } catch (err) {
+      handleApiError(err, 'Failed to fetch your lists');
+    } finally {
+      setIsLoadingMyLists(false);
+    }
+  };
+
   useEffect(() => {
-    if (user && activeTab === 'lists') {
-      fetchAllLists();
+    if (user) {
+      if (activeTab === 'lists') fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     }
   }, [user, activeTab]);
 
@@ -258,6 +292,32 @@ export default function App() {
     }
   };
 
+  // --- FETCH GAME RESULTS WITH INLINE ERROR HANDLING ---
+  const fetchGameResult = async (e, id = null) => {
+    e?.preventDefault();
+    const targetId = id || resultGameId;
+    if (!targetId) return;
+
+    setIsLoadingResult(true);
+    setResultError('');
+    setGameResult(null);
+
+    try {
+      const res = await axios.get(`${API_BASE}/api/games/${targetId}/result/`);
+      setGameResult(res.data);
+      setResultGameId(targetId);
+      if (id) setActiveTab('results');
+      notify(`Loaded results for Game #${targetId}`, 'success');
+    } catch (err) {
+      setGameResult(null);
+      const errMsg = err.response?.data?.detail || err.response?.data?.error || 'Failed to fetch game result';
+      setResultError(errMsg);
+      handleApiError(err, 'Failed to fetch game result');
+    } finally {
+      setIsLoadingResult(false);
+    }
+  };
+
   // --- CREATE ACTIONS ---
   const handleUploadEnv = async (e) => {
     e.preventDefault();
@@ -272,6 +332,7 @@ export default function App() {
       notify(`Environment Created! (ID: ${res.data.id})`, 'success');
       setEnvData({ name: '', min_agents: 1, max_agents: 4, file: null });
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to create environment');
     }
@@ -289,6 +350,7 @@ export default function App() {
       notify(`Agent Created! (ID: ${res.data.id})`, 'success');
       setAgentData({ name: '', env: '', file: null });
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to upload agent');
     }
@@ -304,6 +366,7 @@ export default function App() {
       notify(`Game Room Created! (ID: ${res.data.id})`, 'success');
       setGameData({ name: '', env: '' });
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to create game room');
     }
@@ -317,6 +380,7 @@ export default function App() {
       });
       notify('Agent submitted to game successfully!', 'success');
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Submission failed');
     }
@@ -327,6 +391,7 @@ export default function App() {
       const res = await axios.get(`${API_BASE}/api/games/${gameId}/start/`);
       notify(`Game Execution Triggered! Task ID: ${res.data.task_id}`, 'success');
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to start game');
     }
@@ -353,6 +418,7 @@ export default function App() {
       notify(`Environment #${foundEnv.id} updated via ${method.toUpperCase()}!`, 'success');
       fetchEnv(null, foundEnv.id);
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to update environment');
     }
@@ -377,6 +443,7 @@ export default function App() {
       notify(`Agent #${foundAgent.id} updated via ${method.toUpperCase()}!`, 'success');
       fetchAgent(null, foundAgent.id);
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to update agent');
     }
@@ -390,6 +457,7 @@ export default function App() {
       notify(`Game #${foundGame.id} updated via ${method.toUpperCase()}!`, 'success');
       fetchGame(null, foundGame.id);
       fetchAllLists();
+      if (activeTab === 'profile') fetchMyLists();
     } catch (err) {
       handleApiError(err, 'Failed to update game');
     }
@@ -487,7 +555,9 @@ export default function App() {
       <nav style={styles.nav}>
         {[
           { key: 'lists', label: 'ALL LISTS (DIRECTORY)', icon: <List size={16} /> },
+          { key: 'profile', label: 'MY PROFILE', icon: <User size={16} /> },
           { key: 'games', label: 'GAMES', icon: <Trophy size={16} /> },
+          { key: 'results', label: 'GAME RESULTS', icon: <Award size={16} /> },
           { key: 'environments', label: 'ENVIRONMENTS', icon: <Shield size={16} /> },
           { key: 'agents', label: 'AGENTS', icon: <Bot size={16} /> },
         ].map((tab) => (
@@ -533,7 +603,8 @@ export default function App() {
                     envList.map((env) => (
                       <div key={env.id} style={styles.listItem}>
                         <div style={{ flex: 1, paddingRight: '8px' }}>
-                          <strong style={{ fontSize: '0.95rem' }}>#{env.id} - {env.name}</strong>
+                          <strong style={{ fontSize: '0.95rem' }}>{env.name}</strong>
+                          <div style={styles.subText}><strong>ID:</strong> #{env.id}</div>
                           <div style={styles.subText}>Min Agents: {env.min_agents} | Max Agents: {env.max_agents}</div>
                           <div style={styles.subText}>Creator ID: #{env.creator ?? 'N/A'}</div>
                           {env.code_file && (
@@ -547,7 +618,9 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        <button onClick={() => fetchEnv(null, env.id)} style={styles.btnSmall}>Inspect</button>
+                        <div>
+                          <button onClick={() => fetchEnv(null, env.id)} style={styles.btnSmall}>Inspect</button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -566,7 +639,8 @@ export default function App() {
                     agentList.map((agent) => (
                       <div key={agent.id} style={styles.listItem}>
                         <div style={{ flex: 1, paddingRight: '8px' }}>
-                          <strong style={{ fontSize: '0.95rem' }}>#{agent.id} - {agent.name}</strong>
+                          <strong style={{ fontSize: '0.95rem' }}>{agent.name}</strong>
+                          <div style={styles.subText}><strong>ID:</strong> #{agent.id}</div>
                           <div style={styles.subText}>Target Env ID: #{agent.env}</div>
                           <div style={styles.subText}>Creator ID: #{agent.creator ?? 'N/A'}</div>
                           {agent.code_file && (
@@ -580,7 +654,9 @@ export default function App() {
                             </div>
                           )}
                         </div>
-                        <button onClick={() => fetchAgent(null, agent.id)} style={styles.btnSmall}>Inspect</button>
+                        <div>
+                          <button onClick={() => fetchAgent(null, agent.id)} style={styles.btnSmall}>Inspect</button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -599,17 +675,141 @@ export default function App() {
                     gameList.map((game) => (
                       <div key={game.id} style={styles.listItem}>
                         <div style={{ flex: 1, paddingRight: '8px' }}>
-                          <strong style={{ fontSize: '0.95rem' }}>#{game.id} - {game.name}</strong>
+                          <strong style={{ fontSize: '0.95rem' }}>{game.name}</strong>
+                          <div style={styles.subText}><strong>ID:</strong> #{game.id}</div>
                           <div style={styles.subText}>Target Env ID: #{game.env}</div>
                           <div style={styles.subText}>Creator ID: #{game.creator ?? 'N/A'}</div>
                           <div style={styles.subText}>
                             Status: <span style={styles.statusBadge}>{formatGameStatus(game.status)}</span>
                           </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <button onClick={() => fetchGame(null, game.id)} style={styles.btnSmall}>Inspect</button>
+                          <button 
+                            onClick={() => fetchGameResult(null, game.id)} 
+                            style={{...styles.btnSmall, backgroundColor: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3'}}
+                          >
+                            Results
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= MY PROFILE VIEW ================= */}
+        {activeTab === 'profile' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2><User size={20} /> My Profile & Resources</h2>
+              <button onClick={fetchMyLists} disabled={isLoadingMyLists} style={styles.btnSecondary}>
+                <RefreshCw size={16} className={isLoadingMyLists ? 'spin' : ''} /> Refresh Profile
+              </button>
+            </div>
+
+            <div style={styles.tripleGrid}>
+              {/* MY ENVIRONMENTS LIST */}
+              <div style={styles.card}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Shield size={18} color="#6366f1" /> My Environments ({myEnvList.length})
+                </h3>
+                <div style={styles.scrollList}>
+                  {myEnvList.length === 0 ? (
+                    <p style={styles.emptyText}>You haven't registered any environments.</p>
+                  ) : (
+                    myEnvList.map((env) => (
+                      <div key={env.id} style={styles.listItem}>
+                        <div style={{ flex: 1, paddingRight: '8px' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>{env.name}</strong>
+                          <div style={styles.subText}><strong>ID:</strong> #{env.id}</div>
+                          <div style={styles.subText}>Min Agents: {env.min_agents} | Max Agents: {env.max_agents}</div>
+                          {env.code_file && (
+                            <div style={styles.subText}>
+                              <button
+                                onClick={() => handleDownloadFile(env.code_file, `${env.name}_env.py`)}
+                                style={styles.btnLink}
+                              >
+                                <Download size={12} /> Download Code File
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <button onClick={() => fetchEnv(null, env.id)} style={styles.btnSmall}>Inspect</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* MY AGENTS LIST */}
+              <div style={styles.card}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bot size={18} color="#10b981" /> My Agents ({myAgentList.length})
+                </h3>
+                <div style={styles.scrollList}>
+                  {myAgentList.length === 0 ? (
+                    <p style={styles.emptyText}>You haven't uploaded any agents.</p>
+                  ) : (
+                    myAgentList.map((agent) => (
+                      <div key={agent.id} style={styles.listItem}>
+                        <div style={{ flex: 1, paddingRight: '8px' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>{agent.name}</strong>
+                          <div style={styles.subText}><strong>ID:</strong> #{agent.id}</div>
+                          <div style={styles.subText}>Target Env ID: #{agent.env}</div>
+                          {agent.code_file && (
+                            <div style={styles.subText}>
+                              <button
+                                onClick={() => handleDownloadFile(agent.code_file, `${agent.name}_agent.py`)}
+                                style={styles.btnLink}
+                              >
+                                <Download size={12} /> Download Code File
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <button onClick={() => fetchAgent(null, agent.id)} style={styles.btnSmall}>Inspect</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* MY GAMES LIST */}
+              <div style={styles.card}>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Trophy size={18} color="#f59e0b" /> My Games ({myGameList.length})
+                </h3>
+                <div style={styles.scrollList}>
+                  {myGameList.length === 0 ? (
+                    <p style={styles.emptyText}>You haven't created any game rooms.</p>
+                  ) : (
+                    myGameList.map((game) => (
+                      <div key={game.id} style={styles.listItem}>
+                        <div style={{ flex: 1, paddingRight: '8px' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>{game.name}</strong>
+                          <div style={styles.subText}><strong>ID:</strong> #{game.id}</div>
+                          <div style={styles.subText}>Target Env ID: #{game.env}</div>
                           <div style={styles.subText}>
-                            Agents: {game.agents?.length ? game.agents.join(', ') : 'None'}
+                            Status: <span style={styles.statusBadge}>{formatGameStatus(game.status)}</span>
                           </div>
                         </div>
-                        <button onClick={() => fetchGame(null, game.id)} style={styles.btnSmall}>Inspect</button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <button onClick={() => fetchGame(null, game.id)} style={styles.btnSmall}>Inspect</button>
+                          <button 
+                            onClick={() => fetchGameResult(null, game.id)} 
+                            style={{...styles.btnSmall, backgroundColor: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3'}}
+                          >
+                            Results
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -653,8 +853,14 @@ export default function App() {
                   </p>
                   <p><strong>Creator ID:</strong> {foundGame.creator}</p>
                   <p><strong>Enrolled Agents:</strong> {foundGame.agents?.length ? foundGame.agents.join(', ') : 'None'}</p>
+                  
+                  <div style={{ marginTop: '12px' }}>
+                    <button onClick={() => fetchGameResult(null, foundGame.id)} style={{...styles.btnSecondary, backgroundColor: '#e0e7ff', borderColor: '#c7d2fe', color: '#3730a3'}}>
+                      <Award size={14} /> View Match Results
+                    </button>
+                  </div>
 
-                  <hr style={{ margin: '12px 0', border: '0.5px solid #e2e8f0' }} />
+                  <hr style={{ margin: '16px 0', border: '0.5px solid #e2e8f0' }} />
                   <h4><Edit3 size={16} /> Edit Game (PUT / PATCH)</h4>
                   <div style={styles.form}>
                     <div>
@@ -776,6 +982,53 @@ export default function App() {
                 </div>
                 <span style={styles.helpText}>Triggers the background Celery task / Docker execution for the game session.</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= GAME RESULTS VIEW ================= */}
+        {activeTab === 'results' && (
+          <div style={styles.grid}>
+            <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
+              <h3><Award size={18} /> Game Results Viewer</h3>
+              <form onSubmit={(e) => fetchGameResult(e)} style={styles.form}>
+                <div>
+                  <div style={styles.row}>
+                    <input
+                      type="number"
+                      placeholder="Enter Game ID to View Results"
+                      value={resultGameId}
+                      onChange={(e) => {
+                        setResultGameId(e.target.value);
+                        setResultError('');
+                      }}
+                      style={styles.input}
+                      required
+                    />
+                    <button type="submit" disabled={isLoadingResult} style={{...styles.btnPrimary, width: '200px'}}>
+                      {isLoadingResult ? 'Loading...' : 'Fetch Results'}
+                    </button>
+                  </div>
+                  <span style={styles.helpText}>Enter the numerical ID of a completed game to inspect scores, rankings, and logs.</span>
+                </div>
+              </form>
+
+              {/* Explicit Inline Error Banner for Game Results */}
+              {resultError && (
+                <div style={{ ...styles.authErrorBox, marginTop: '16px' }}>
+                  <AlertCircle size={18} />
+                  <span><strong>Error:</strong> {resultError}</span>
+                </div>
+              )}
+
+              {gameResult && (
+                <div style={styles.detailsBox}>
+                  <h4 style={{ marginBottom: '8px', color: '#1e293b' }}>Result Overview for Game #{resultGameId}</h4>
+                  <pre style={styles.jsonBox}>
+                    {JSON.stringify(gameResult, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1193,6 +1446,17 @@ const styles = {
     borderRadius: '6px',
     border: '1px solid #e2e8f0',
   },
+  jsonBox: {
+    backgroundColor: '#0f172a',
+    color: '#f8fafc',
+    padding: '16px',
+    borderRadius: '6px',
+    overflowX: 'auto',
+    fontSize: '0.85rem',
+    fontFamily: 'monospace',
+    marginTop: '8px',
+    maxHeight: '500px',
+  },
   alert: {
     padding: '12px 16px',
     borderRadius: '6px',
@@ -1220,6 +1484,7 @@ const styles = {
     alignItems: 'center',
     gap: '8px',
     marginBottom: '12px',
+    border: '1px solid #fca5a5',
   },
   toggleAuth: {
     marginTop: '16px',
