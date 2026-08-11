@@ -4,6 +4,7 @@ from env_wrapper import EnvWrapper
 import multiprocessing
 import logging, sys, time, signal, random
 from multiprocessing.connection import Connection
+import settings
 
 def get_module_logger(mod_name):
     """
@@ -42,7 +43,7 @@ class AgentInfo:
 
 
 class CodeRunner:
-    PIPE_PATH = '/stdin_pipe'
+    PIPE_PATH = settings.PIPE_PATH
     
     def __init__(self):
         logger.info("Initializing CodeRunner...")
@@ -53,7 +54,7 @@ class CodeRunner:
         
         self.turns = {} # stored as turn -> agent_id 
         self.timestamp = 0
-        self.timestamp_limit = 200 # TODO: Read from settings
+        self.timestamp_limit = settings.TIMESTAMP_LIMIT
 
         self.game_on = False
         self.game_result = None
@@ -100,7 +101,7 @@ class CodeRunner:
         env = payload.get('env')
         agents = payload.get('agents')
 
-        with open('env.py', 'w') as file:
+        with open(settings.ENVIROMENT_FILENAME, 'w') as file:
             file.write(env)
             file.close()
 
@@ -195,7 +196,7 @@ class CodeRunner:
         """
 
         env_conn, _child_env_conn = multiprocessing.Pipe(duplex=True)
-        env_wrapper = multiprocessing.Process(target=EnvWrapper.create_env_wrapper, args=('env.py', _child_env_conn), name="env")
+        env_wrapper = multiprocessing.Process(target=EnvWrapper.create_env_wrapper, args=(settings.ENVIROMENT_FILENAME, _child_env_conn), name="env")
         env_wrapper.start()
         self.env_connection = env_conn
         self.env_wrapper_process = env_wrapper

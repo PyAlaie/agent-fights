@@ -3,6 +3,7 @@ import pyseccomp, logging, signal
 import time, json
 from BaseWrapper import BaseWrapper
 import resource
+import settings
 
 def get_module_logger(mod_name):
     """
@@ -21,12 +22,11 @@ def get_module_logger(mod_name):
 logger = get_module_logger(__name__)
 
 class Wrapper(BaseWrapper):
-    def __init__(self, file_path, connection, memory_limit=10, cpu_limit=2):
+    def __init__(self, file_path, connection, memory_limit=settings.AGENT_MEMORY_LIMIT):
         self.file_path = file_path
         self.connection = connection
 
-        self.cpu_limit = cpu_limit
-        self.memory_limit = memory_limit
+        self.memory_limit = min(memory_limit, settings.AGENT_MEMORY_LIMIT)
 
         # self._set_limits()
 
@@ -43,7 +43,6 @@ class Wrapper(BaseWrapper):
     
     def _set_limits(self):
         resource.setrlimit(resource.RLIMIT_AS, (self.memory_limit, self.memory_limit))
-        # resource.setrlimit(resource.RLIMIT_CPU, (self.cpu_limit, self.cpu_limit))
 
 
     def _setup_seccomp(self):
@@ -51,10 +50,7 @@ class Wrapper(BaseWrapper):
 
         f = pyseccomp.SyscallFilter(defaction=pyseccomp.KILL)
         
-        allowed_syscalls = [
-            'read', 'write', 'brk', 'mmap', 'munmap', 'getpid',
-            # 'getpid', 'getuid', 'geteuid'
-        ]
+        allowed_syscalls = settings.ALLOWED_SYSCALSS
 
         for syscall in allowed_syscalls:
             try:
