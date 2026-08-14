@@ -6,10 +6,12 @@ Docker container.
 # Wrapper settings
 
 # Syscalls allowed to use by each agent
-ALLOWED_SYSCALSS = ['read', 'write', 'brk', 'mmap', 'munmap', 'getpid']
+ALLOWED_SYSCALSS = ['read', 'write', 'brk', 'mmap', 'munmap', 'getpid', 'clock_nanosleep']
 
-# Memoery limit in bytes
-AGENT_MEMORY_LIMIT = 100
+# Agent Limits
+AGENT_MEMORY_LIMIT = 128 * 10**6 # In bytes
+AGENT_TOTAL_TIME_LIMIT = 100 # In seconds
+AGENT_ACTION_TIME_LIMIT = 100 # In seconds
 
 
 

@@ -106,6 +106,6 @@ class Wrapper(BaseWrapper):
 
 
     @staticmethod
-    def create_wrapper(agent, connection):
-        warpper = Wrapper(agent, connection)
+    def create_wrapper(agent, connection, memory_limit):
+        warpper = Wrapper(agent, connection, memory_limit)
         warpper.run()

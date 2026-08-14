@@ -32,6 +32,7 @@ class AgentInfo:
             turn=None,
             filename=None,
             time_remaining=None,
+            action_time=None,
         ):
         self.agent_id = agent_id
         self.pipe_connection : Connection = pipe_connection
@@ -40,6 +41,7 @@ class AgentInfo:
         self.filename = filename
         self.total_time_passed = 0
         self.time_remaining = time_remaining
+        self.action_time = action_time
 
 
 class CodeRunner:
@@ -98,8 +100,34 @@ class CodeRunner:
 
         payload = json.loads(self.raw_payload)
 
+        # The payload should look like this:
+        # payload = {
+        #     "env": ... , -> code of the enviroment
+        #     "agents": ... , -> a list of codes, each for an agent
+        #     "game_settings": ... , -> dictionary containing information like memory limit, time limit and ...
+        # }
+
         env = payload.get('env')
         agents = payload.get('agents')
+        game_settings = payload.get('game_settings') 
+
+        # We use the max limits if game_settings is None.
+        agent_memory_limit = settings.AGENT_MEMORY_LIMIT
+        agent_total_time_limit = settings.AGENT_TOTAL_TIME_LIMIT
+        agent_action_time_limit = settings.AGENT_ACTION_TIME_LIMIT
+
+        if game_settings is None:
+            logger.warning("No game settings found! using the max settings...")
+        else:
+            if game_settings.get("agent_memory_limit"):
+                agent_memory_limit = game_settings.get("agent_memory_limit")
+
+            if game_settings.get("agent_total_time_limit"):
+                agent_total_time_limit = game_settings.get("agent_total_time_limit")
+
+            if game_settings.get("agent_action_time_limit"):
+                agent_action_time_limit = game_settings.get("agent_action_time_limit")
+
 
         with open(settings.ENVIROMENT_FILENAME, 'w') as file:
             file.write(env)
@@ -118,14 +146,15 @@ class CodeRunner:
                 file.write(code)
                 agent_info.filename = filename
             
-            agent_wrapper, connection = self._establish_agent_connections(agent_id, filename)
+            agent_wrapper, connection = self._establish_agent_connections(agent_id, filename, agent_memory_limit)
 
             agent_info.wrapper_process = agent_wrapper
             agent_info.pipe_connection = connection
 
             agent_info.turn = turn
             self.turns[turn] = agent_id
-            agent_info.time_remaining = 3 # TODO: gotta change it
+            agent_info.time_remaining = agent_total_time_limit
+            agent_info.action_time = agent_action_time_limit
             
             self.agents[agent_id] = agent_info
             turn += 1
@@ -202,7 +231,7 @@ class CodeRunner:
         self.env_wrapper_process = env_wrapper
 
     
-    def _establish_agent_connections(self, agent_id, filename):
+    def _establish_agent_connections(self, agent_id, filename, memory_limit):
         """ 
         Creates the wrapper and the connection to the wrapper for agent  
         returns wrapper, connection
@@ -210,7 +239,7 @@ class CodeRunner:
 
         parent_conn, child_conn = multiprocessing.Pipe(duplex=True)
 
-        agent_wrapper = multiprocessing.Process(target=Wrapper.create_wrapper, args=(filename, child_conn), name=f"agent-{agent_id}")
+        agent_wrapper = multiprocessing.Process(target=Wrapper.create_wrapper, args=(filename, child_conn, memory_limit), name=f"agent-{agent_id}")
         agent_wrapper.start()
 
         return agent_wrapper, parent_conn
@@ -232,7 +261,7 @@ class CodeRunner:
             agent_pipe_connection.send(env_data)
 
             start = time.time()
-            if agent_pipe_connection.poll(agent_info.time_remaining):
+            if agent_pipe_connection.poll(min(agent_info.time_remaining, agent_info.action_time)):
                 action = agent_pipe_connection.recv()
             else:
                 # The agent basically loses once its time limit is exceeded
@@ -246,7 +275,7 @@ class CodeRunner:
 
         except Exception as e:
             exited = True
-            logger.info(f"Error getting {agent_id} action: {e}")
+            logger.info(f"Error getting agent {agent_id} action: {e}")
 
         payload = {
             "action": action,

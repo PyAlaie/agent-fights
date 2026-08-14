@@ -48,6 +48,10 @@ class Game(Base):
     agents = models.ManyToManyField(to=Agent, related_name='games', null=True)
     status = models.CharField(max_length=10, choices=StatusChoices, default=StatusChoices.created)
     creator = models.ForeignKey(to=settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_games')
+    agent_memory_limit = models.IntegerField(null=True,blank=True)
+    agent_total_time_limit = models.IntegerField(null=True, blank=True)
+    agent_action_time_limit = models.IntegerField(null=True, blank=True)
+
 
     def clean(self):
         error_messages = {NON_FIELD_ERRORS: []}

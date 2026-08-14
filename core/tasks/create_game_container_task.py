@@ -23,9 +23,16 @@ def create_game_container_task(game_id):
         for agent in game.agents.all():
             agent_codes[agent.id] = agent.code_file.read().decode("utf-8")
 
+        game_settings = {
+            "agent_memory_limit": game.agent_memory_limit,
+            "agent_total_time_limit": game.agent_total_time_limit,
+            "agent_action_time_limit": game.agent_action_time_limit,
+        }
+
         payload = {
             'env': env_code,
-            'agents': agent_codes
+            'agents': agent_codes,
+            'game_settings': game_settings
         }
 
         pipe_path = '/tmp/my_pipe_' + str(os.getpid())
