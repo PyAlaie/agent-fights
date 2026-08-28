@@ -32,6 +32,73 @@ const formatGameStatus = (status) => {
   return GAME_STATUS_MAP[statusStr] || `Status Code: ${status}`;
 };
 
+// Helper function to safely format winner representation from GameResult
+const formatWinner = (winner) => {
+  if (winner === null || winner === undefined) return 'Draw / No Winner';
+  if (typeof winner === 'object') {
+    return winner.name || winner.username || `Agent #${winner.id || JSON.stringify(winner)}`;
+  }
+  return `Agent / User #${winner}`;
+};
+
+// Helper function to safely format container log or generic text as standard strings
+const formatAsString = (val) => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  try {
+    return JSON.stringify(val, null, 2);
+  } catch {
+    return String(val);
+  }
+};
+
+// Helper function to render events line-by-line cleanly
+const renderEventsList = (events) => {
+  if (!events) return <p style={styles.emptyText}>No event logs recorded.</p>;
+
+  // Parse stringified JSON if events was sent as a JSON string from backend
+  let eventList = events;
+  if (typeof events === 'string') {
+    try {
+      eventList = JSON.parse(events);
+    } catch {
+      // If it's a plain non-JSON string, render it directly
+      return (
+        <pre style={{ ...styles.jsonBox, maxHeight: '250px' }}>
+          {events}
+        </pre>
+      );
+    }
+  }
+
+  // If it's an array, map each item to a beautifully formatted line item
+  if (Array.isArray(eventList)) {
+    if (eventList.length === 0) {
+      return <p style={styles.emptyText}>No event logs recorded.</p>;
+    }
+
+    return (
+      <div style={styles.eventContainer}>
+        {eventList.map((item, index) => (
+          <div key={index} style={styles.eventRow}>
+            <span style={styles.eventBadge}>#{index + 1}</span>
+            <span style={styles.eventContent}>
+              {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Fallback for unexpected objects
+  return (
+    <pre style={{ ...styles.jsonBox, maxHeight: '250px' }}>
+      {JSON.stringify(eventList, null, 2)}
+    </pre>
+  );
+};
+
 // 3. Configure Axios Defaults & CSRF Interceptor
 const API_BASE = 'http://localhost:8000';
 axios.defaults.withCredentials = true;
@@ -990,7 +1057,10 @@ export default function App() {
         {activeTab === 'results' && (
           <div style={styles.grid}>
             <div style={{ ...styles.card, gridColumn: '1 / -1' }}>
-              <h3><Award size={18} /> Game Results Viewer</h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Award size={18} color="#6366f1" /> Game Results Viewer
+              </h3>
+
               <form onSubmit={(e) => fetchGameResult(e)} style={styles.form}>
                 <div>
                   <div style={styles.row}>
@@ -1005,15 +1075,15 @@ export default function App() {
                       style={styles.input}
                       required
                     />
-                    <button type="submit" disabled={isLoadingResult} style={{...styles.btnPrimary, width: '200px'}}>
+                    <button type="submit" disabled={isLoadingResult} style={{ ...styles.btnPrimary, width: '200px' }}>
                       {isLoadingResult ? 'Loading...' : 'Fetch Results'}
                     </button>
                   </div>
-                  <span style={styles.helpText}>Enter the numerical ID of a completed game to inspect scores, rankings, and logs.</span>
+                  <span style={styles.helpText}>Enter the numerical ID of a completed game to inspect winner, events, and container logs.</span>
                 </div>
               </form>
 
-              {/* Explicit Inline Error Banner for Game Results */}
+              {/* Inline Error Banner for Game Results */}
               {resultError && (
                 <div style={{ ...styles.authErrorBox, marginTop: '16px' }}>
                   <AlertCircle size={18} />
@@ -1021,12 +1091,52 @@ export default function App() {
                 </div>
               )}
 
+              {/* GameResult View */}
               {gameResult && (
-                <div style={styles.detailsBox}>
-                  <h4 style={{ marginBottom: '8px', color: '#1e293b' }}>Result Overview for Game #{resultGameId}</h4>
-                  <pre style={styles.jsonBox}>
-                    {JSON.stringify(gameResult, null, 2)}
-                  </pre>
+                <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  {/* Metadata Summary Cards */}
+                  <div style={styles.tripleGrid}>
+                    <div style={{ ...styles.detailsBox, margin: 0 }}>
+                      <span style={styles.subText}>Game ID</span>
+                      <h4 style={{ margin: '4px 0 0 0', fontSize: '1.1rem' }}>
+                        #{typeof gameResult.game === 'object' ? gameResult.game.id : (gameResult.game || resultGameId)}
+                      </h4>
+                    </div>
+
+                    <div style={{ ...styles.detailsBox, margin: 0, backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                      <span style={{ ...styles.subText, color: '#166534' }}>Winner</span>
+                      <h4 style={{ margin: '4px 0 0 0', fontSize: '1.1rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Trophy size={18} /> {formatWinner(gameResult.winner)}
+                      </h4>
+                    </div>
+
+                    <div style={{ ...styles.detailsBox, margin: 0 }}>
+                      <span style={styles.subText}>Timestamp</span>
+                      <h4 style={{ margin: '4px 0 0 0', fontSize: '0.9rem', color: '#475569' }}>
+                        {gameResult.created_at ? new Date(gameResult.created_at).toLocaleString() : 'N/A'}
+                      </h4>
+                    </div>
+                  </div>
+
+                  {/* Game Events View (Line-by-Line List Formatting) */}
+                  <div>
+                    <h4 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <List size={16} /> Game Events Log
+                    </h4>
+                    {renderEventsList(gameResult.events)}
+                  </div>
+
+                  {/* Container Log Output View */}
+                  <div>
+                    <h4 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <AlertCircle size={16} /> Container Execution Log
+                    </h4>
+                    <pre style={{ ...styles.jsonBox, maxHeight: '300px', backgroundColor: '#090d16', color: '#38bdf8' }}>
+                      {formatAsString(gameResult.container_log) || 'No container logs available.'}
+                    </pre>
+                  </div>
+
                 </div>
               )}
             </div>
@@ -1528,5 +1638,41 @@ const styles = {
     color: '#94a3b8',
     fontSize: '0.875rem',
     fontStyle: 'italic',
+  },
+  eventContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    backgroundColor: '#0f172a',
+    borderRadius: '6px',
+    padding: '12px',
+    maxHeight: '300px',
+    overflowY: 'auto',
+    border: '1px solid #1e293b',
+  },
+  eventRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    padding: '6px 8px',
+    backgroundColor: '#1e293b',
+    borderRadius: '4px',
+    fontSize: '0.85rem',
+    fontFamily: 'monospace',
+    color: '#e2e8f0',
+  },
+  eventBadge: {
+    backgroundColor: '#334155',
+    color: '#38bdf8',
+    fontSize: '0.75rem',
+    padding: '2px 6px',
+    borderRadius: '3px',
+    fontWeight: 'bold',
+    userSelect: 'none',
+  },
+  eventContent: {
+    wordBreak: 'break-all',
+    whiteSpace: 'pre-wrap',
+    flex: 1,
   },
 };

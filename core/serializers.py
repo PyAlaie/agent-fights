@@ -70,9 +70,8 @@ class StartGameSerializer(serializers.Serializer):
          
         return attrs
 
-class GameResultSerializer(serializers.Serializer):
+class GameResultSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GameResult
         fields = "__all__"
-        read_only_fields = "__all__"
