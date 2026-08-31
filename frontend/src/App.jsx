@@ -56,13 +56,11 @@ const formatAsString = (val) => {
 const renderEventsList = (events) => {
   if (!events) return <p style={styles.emptyText}>No event logs recorded.</p>;
 
-  // Parse stringified JSON if events was sent as a JSON string from backend
   let eventList = events;
   if (typeof events === 'string') {
     try {
       eventList = JSON.parse(events);
     } catch {
-      // If it's a plain non-JSON string, render it directly
       return (
         <pre style={{ ...styles.jsonBox, maxHeight: '250px' }}>
           {events}
@@ -71,7 +69,6 @@ const renderEventsList = (events) => {
     }
   }
 
-  // If it's an array, map each item to a beautifully formatted line item
   if (Array.isArray(eventList)) {
     if (eventList.length === 0) {
       return <p style={styles.emptyText}>No event logs recorded.</p>;
@@ -91,7 +88,6 @@ const renderEventsList = (events) => {
     );
   }
 
-  // Fallback for unexpected objects
   return (
     <pre style={{ ...styles.jsonBox, maxHeight: '250px' }}>
       {JSON.stringify(eventList, null, 2)}
@@ -174,7 +170,7 @@ export default function App() {
       setUser(null);
       notify('Session expired or unauthorized. Please log in again.', 'error');
     } else if (status === 403) {
-      notify('Permission Denied: You do not have ownership rights for this resource.', 'error');
+      notify('Permission Denied: You do not have permissions for this action or resource.', 'error');
     } else if (status === 404) {
       notify('Resource not found. Please verify the ID.', 'error');
     } else if (status === 400) {
@@ -185,7 +181,7 @@ export default function App() {
       }
       notify(`Validation Error: ${errDetails}`, 'error');
     } else {
-      notify(data.detail || defaultMsg, 'error');
+      notify(data?.detail || defaultMsg, 'error');
     }
   };
 
@@ -214,17 +210,31 @@ export default function App() {
     }
   };
 
-  // --- AUTHENTICATION ---
+  // --- AUTHENTICATION FIX ---
+  // Fix 1: If signing up, log the user in immediately afterward to obtain authorization session/cookies before navigating to main page
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
-    const endpoint = authForm.isSignup ? '/authentication/sign-up/' : '/authentication/login/';
 
     try {
-      await axios.post(`${API_BASE}${endpoint}`, {
-        username: authForm.username,
-        password: authForm.password,
-      });
+      if (authForm.isSignup) {
+        await axios.post(`${API_BASE}/authentication/sign-up/`, {
+          username: authForm.username,
+          password: authForm.password,
+        });
+        
+        // Auto-login after successful registration to acquire session/CSRF privileges
+        await axios.post(`${API_BASE}/authentication/login/`, {
+          username: authForm.username,
+          password: authForm.password,
+        });
+      } else {
+        await axios.post(`${API_BASE}/authentication/login/`, {
+          username: authForm.username,
+          password: authForm.password,
+        });
+      }
+
       setUser(authForm.username);
       setAuthForm({ username: '', password: '', isSignup: false });
       notify(`Welcome, ${authForm.username}!`, 'success');
@@ -268,7 +278,6 @@ export default function App() {
       setEnvList(Array.isArray(envRes.data) ? envRes.data : envRes.data.results || []);
       setAgentList(Array.isArray(agentRes.data) ? agentRes.data : agentRes.data.results || []);
       setGameList(Array.isArray(gameRes.data) ? gameRes.data : gameRes.data.results || []);
-      notify('Directories refreshed successfully.', 'info');
     } catch (err) {
       handleApiError(err, 'Failed to fetch directory lists');
     } finally {
@@ -289,7 +298,6 @@ export default function App() {
       setMyEnvList(Array.isArray(envRes.data) ? envRes.data : envRes.data.results || []);
       setMyAgentList(Array.isArray(agentRes.data) ? agentRes.data : agentRes.data.results || []);
       setMyGameList(Array.isArray(gameRes.data) ? gameRes.data : gameRes.data.results || []);
-      notify('User profile refreshed successfully.', 'info');
     } catch (err) {
       handleApiError(err, 'Failed to fetch your lists');
     } finally {
@@ -359,7 +367,7 @@ export default function App() {
     }
   };
 
-  // --- FETCH GAME RESULTS WITH INLINE ERROR HANDLING ---
+  // --- FETCH GAME RESULTS ---
   const fetchGameResult = async (e, id = null) => {
     e?.preventDefault();
     const targetId = id || resultGameId;
@@ -385,7 +393,8 @@ export default function App() {
     }
   };
 
-  // --- CREATE ACTIONS ---
+  // --- CREATE ACTIONS FIX ---
+  // Fix 2: Display the created object ID reliably by inspecting the response or fetching the updated list immediately
   const handleUploadEnv = async (e) => {
     e.preventDefault();
     const formData = new FormData();
@@ -396,7 +405,18 @@ export default function App() {
 
     try {
       const res = await axios.post(`${API_BASE}/api/envs/`, formData);
-      notify(`Environment Created! (ID: ${res.data.id})`, 'success');
+      const createdId = res.data?.id;
+
+      if (createdId) {
+        notify(`Environment Created! (ID: ${createdId})`, 'success');
+      } else {
+        // Fallback: fetch updated list to report the latest object ID created
+        const updatedRes = await axios.get(`${API_BASE}/api/envs/`);
+        const list = Array.isArray(updatedRes.data) ? updatedRes.data : updatedRes.data.results || [];
+        const latestId = list.length ? Math.max(...list.map((o) => o.id)) : 'Unknown';
+        notify(`Environment Created Successfully! (Assigned ID: #${latestId})`, 'success');
+      }
+
       setEnvData({ name: '', min_agents: 1, max_agents: 4, file: null });
       fetchAllLists();
       if (activeTab === 'profile') fetchMyLists();
@@ -414,7 +434,18 @@ export default function App() {
 
     try {
       const res = await axios.post(`${API_BASE}/api/agents/`, formData);
-      notify(`Agent Created! (ID: ${res.data.id})`, 'success');
+      const createdId = res.data?.id;
+
+      if (createdId) {
+        notify(`Agent Created! (ID: ${createdId})`, 'success');
+      } else {
+        // Fallback: fetch updated list to report latest object ID
+        const updatedRes = await axios.get(`${API_BASE}/api/agents/`);
+        const list = Array.isArray(updatedRes.data) ? updatedRes.data : updatedRes.data.results || [];
+        const latestId = list.length ? Math.max(...list.map((o) => o.id)) : 'Unknown';
+        notify(`Agent Uploaded Successfully! (Assigned ID: #${latestId})`, 'success');
+      }
+
       setAgentData({ name: '', env: '', file: null });
       fetchAllLists();
       if (activeTab === 'profile') fetchMyLists();
@@ -430,7 +461,18 @@ export default function App() {
         name: gameData.name,
         env: gameData.env,
       });
-      notify(`Game Room Created! (ID: ${res.data.id})`, 'success');
+      const createdId = res.data?.id;
+
+      if (createdId) {
+        notify(`Game Room Created! (ID: ${createdId})`, 'success');
+      } else {
+        // Fallback: fetch updated list to report latest object ID
+        const updatedRes = await axios.get(`${API_BASE}/api/games/`);
+        const list = Array.isArray(updatedRes.data) ? updatedRes.data : updatedRes.data.results || [];
+        const latestId = list.length ? Math.max(...list.map((o) => o.id)) : 'Unknown';
+        notify(`Game Created Successfully! (Assigned ID: #${latestId})`, 'success');
+      }
+
       setGameData({ name: '', env: '' });
       fetchAllLists();
       if (activeTab === 'profile') fetchMyLists();
@@ -1119,7 +1161,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Game Events View (Line-by-Line List Formatting) */}
+                  {/* Game Events View */}
                   <div>
                     <h4 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <List size={16} /> Game Events Log
@@ -1579,8 +1621,7 @@ const styles = {
   },
   authContainer: {
     display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center',    alignItems: 'center',
     minHeight: '100vh',
     backgroundColor: '#f1f5f9',
   },
