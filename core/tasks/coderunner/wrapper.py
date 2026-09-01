@@ -28,7 +28,7 @@ class Wrapper(BaseWrapper):
 
         self.memory_limit = min(memory_limit, settings.AGENT_MEMORY_LIMIT)
 
-        # self._set_limits()
+        self._set_limits()
 
         self.agent_namespace = {}
 
